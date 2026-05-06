@@ -28,6 +28,14 @@ IS_WSL = (
 
 # Glob patterns for common Windows install locations not always on PATH.
 WIN_PROBE_PATTERNS: dict[str, list[str]] = {
+    "node": [
+        r"C:\Program Files\nodejs\node.exe",
+        r"C:\Program Files (x86)\nodejs\node.exe",
+    ],
+    "npm": [
+        r"C:\Program Files\nodejs\npm.cmd",
+        r"C:\Program Files (x86)\nodejs\npm.cmd",
+    ],
     "mysql": [
         r"C:\Program Files\MySQL\MySQL Server *\bin\mysql.exe",
         r"C:\Program Files\MySQL\*\bin\mysql.exe",
@@ -75,8 +83,8 @@ STRINGS = {
         "skip":          "Skipping",
         "choco_install": "Installing Chocolatey (required for Windows installs)...",
         "choco_fail":    "Chocolatey could not be installed. Re-run this script as Administrator.",
-        "npm_missing":   "npm is required for {name} but is not installed.\n      Install Node.js then re-run: choco install nodejs -y",
-        "npm_note":      "Note: Run 'choco install nodejs -y' in an admin CMD, then re-run this script.",
+        "npm_missing":   "npm is required for {name} but Node.js was not installed or needs a new terminal session.\n      Re-run system-setup to install Node.js first.",
+        "npm_note":      "Note: Re-run system-setup and choose to install Node.js, then try again.",
         "done":          "Setup complete.",
     },
     "es": {
@@ -90,13 +98,18 @@ STRINGS = {
         "skip":          "Omitiendo",
         "choco_install": "Instalando Chocolatey (necesario para instalaciones en Windows)...",
         "choco_fail":    "No se pudo instalar Chocolatey. Vuelva a ejecutar como Administrador.",
-        "npm_missing":   "npm es necesario para {name} pero no está instalado.\n      Instale Node.js y vuelva a ejecutar: choco install nodejs -y",
-        "npm_note":      "Nota: Ejecute 'choco install nodejs -y' en un CMD como admin y vuelva a ejecutar.",
+        "npm_missing":   "npm es necesario para {name} pero Node.js no fue instalado o requiere una nueva terminal.\n      Vuelva a ejecutar system-setup para instalar Node.js primero.",
+        "npm_note":      "Nota: Vuelva a ejecutar system-setup y elija instalar Node.js primero.",
         "done":          "Configuración completa.",
     },
 }
 
 TOOLS = {
+    "Node.js": {
+        "check":       ["node", "--version"],
+        "win_install": "choco install nodejs -y --no-progress",
+        "wsl_install": "sudo apt-get update -qq && sudo apt-get install -y nodejs npm",
+    },
     "MySQL": {
         "check":       ["mysql", "--version"],
         "win_install": "choco install mysql -y --no-progress",
@@ -142,7 +155,7 @@ def _ask(name: str, s: dict) -> bool:
 
 
 def _npm_available() -> bool:
-    return _run(["npm", "--version"])
+    return _check(["npm", "--version"])
 
 
 def _ensure_choco(s: dict) -> bool:
