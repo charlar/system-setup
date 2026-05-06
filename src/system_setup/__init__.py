@@ -86,6 +86,8 @@ def _check(cmd: list[str]) -> bool:
 # ---------------------------------------------------------------------------
 
 def _pg_service_file() -> str:
+    if IS_WINDOWS:
+        return os.path.join(os.environ.get("APPDATA", os.path.expanduser("~")), "postgresql", ".pg_service.conf")
     return os.path.expanduser("~/.pg_service.conf")
 
 
@@ -236,14 +238,20 @@ def _configure_mysql(s: dict, password: str = "") -> None:
 # ---------------------------------------------------------------------------
 
 def _pg_configured() -> bool:
-    svc = _read_lines(_pg_service_file())
-    pas = _read_lines(_pgpass_file())
-    return bool(svc) and bool(pas)
+    def _has_content(path: str) -> bool:
+        return bool(path and os.path.exists(path) and os.path.getsize(path) > 0)
+
+    svc_ok  = _has_content(_pg_service_file()) or _has_content(os.environ.get("PGSERVICEFILE", ""))
+    pass_ok = _has_content(_pgpass_file())     or _has_content(os.environ.get("PGPASSFILE", ""))
+    return svc_ok and pass_ok
 
 
 def _mysql_configured() -> bool:
-    lines = _read_lines(_my_cnf_file())
-    return any(l.strip().startswith("[client") for l in lines)
+    candidates = [_my_cnf_file()]
+    for path in candidates:
+        if any(l.strip().startswith("[client") for l in _read_lines(path)):
+            return True
+    return False
 
 
 # ---------------------------------------------------------------------------
