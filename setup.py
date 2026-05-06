@@ -2,6 +2,7 @@
 System setup script — checks for required tools and installs on request.
 Run via: uv run setup.py
 """
+import glob
 import os
 import platform
 import subprocess
@@ -24,6 +25,44 @@ IS_WSL = (
     platform.system() == "Linux"
     and "microsoft" in platform.uname().release.lower()
 )
+
+# Glob patterns for common Windows install locations not always on PATH.
+# If a match is found its parent directory is added to PATH for this session.
+WIN_PROBE_PATTERNS: dict[str, list[str]] = {
+    "mysql": [
+        r"C:\Program Files\MySQL\MySQL Server *\bin\mysql.exe",
+        r"C:\Program Files\MySQL\*\bin\mysql.exe",
+    ],
+    "psql": [
+        r"C:\Program Files\PostgreSQL\*\bin\psql.exe",
+    ],
+    "code": [
+        os.path.expanduser(r"~\AppData\Local\Programs\Microsoft VS Code\bin\code.cmd"),
+        r"C:\Program Files\Microsoft VS Code\bin\code.cmd",
+        r"C:\Program Files (x86)\Microsoft VS Code\bin\code.cmd",
+    ],
+}
+
+
+def _probe_win_path(exe: str) -> bool:
+    """Check known install locations on Windows and add the directory to PATH if found."""
+    for pattern in WIN_PROBE_PATTERNS.get(exe, []):
+        matches = glob.glob(pattern)
+        if matches:
+            bin_dir = os.path.dirname(matches[0])
+            os.environ["PATH"] = bin_dir + ";" + os.environ.get("PATH", "")
+            return True
+    return False
+
+
+def _check(cmd: list[str]) -> bool:
+    """Check if a command is available, probing known paths on Windows if needed."""
+    if _run(cmd):
+        return True
+    if IS_WINDOWS and _probe_win_path(cmd[0]):
+        return _run(cmd)
+    return False
+
 
 STRINGS = {
     "en": {
@@ -131,11 +170,11 @@ def main() -> None:
     s = _choose_language()
     print(f"\n{s['title']}\n")
 
-    choco_ready = not IS_WINDOWS  # only matters on Windows
+    choco_ready = not IS_WINDOWS
     npm_needed = False
 
     for name, cfg in TOOLS.items():
-        if _run(cfg["check"]):
+        if _check(cfg["check"]):
             print(f"  [ok] {name} — {s['ok']}")
             continue
 
@@ -159,7 +198,7 @@ def main() -> None:
         print(f"  {s['installing']} {name}...")
         _exec(install_cmd)
 
-        if _run(cfg["check"]):
+        if _check(cfg["check"]):
             print(f"  [ok] {name} {s['success']}")
         else:
             print(f"  [!] {name} {s['reopen']}")
