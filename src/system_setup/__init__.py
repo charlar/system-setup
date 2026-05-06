@@ -276,7 +276,7 @@ STRINGS = {
         "npm_note":         "Note: Re-run system-setup and choose to install Node.js, then try again.",
         "update_found":     "A newer version is available. Update now? [y/N] ",
         "updating":         "Updating system-setup...",
-        "update_done":      "Updated. Please re-run system-setup.",
+        "update_done":      "Update pulled. Reinstall scheduled — please re-run system-setup in a moment.",
         "update_skip":      "Skipping update.",
         "update_err":       "Could not check for updates.",
         "pg_service_name":  "PostgreSQL service name",
@@ -306,7 +306,7 @@ STRINGS = {
         "npm_note":         "Nota: Vuelva a ejecutar system-setup y elija instalar Node.js primero.",
         "update_found":     "Hay una versión más reciente disponible. ¿Actualizar ahora? [s/N] ",
         "updating":         "Actualizando system-setup...",
-        "update_done":      "Actualizado. Por favor vuelva a ejecutar system-setup.",
+        "update_done":      "Actualización descargada. Reinstalación programada — vuelva a ejecutar system-setup en un momento.",
         "update_skip":      "Omitiendo actualización.",
         "update_err":       "No se pudo verificar actualizaciones.",
         "pg_service_name":  "Nombre del servicio PostgreSQL",
@@ -435,7 +435,26 @@ def _check_for_updates(s: dict) -> bool:
 
     print(f"  {s['updating']}")
     subprocess.run(["git", "-C", REPO_DIR, "pull", "--ff-only"], check=False)
-    subprocess.run(["uv", "tool", "install", REPO_DIR, "--reinstall"], check=False)
+
+    if IS_WINDOWS:
+        # Can't reinstall a running .exe on Windows — schedule via detached batch file
+        import tempfile
+        tmp = tempfile.NamedTemporaryFile(suffix=".cmd", delete=False, mode="w")
+        tmp.write(
+            "@echo off\n"
+            "timeout /t 2 /nobreak >nul\n"
+            f'uv tool install "{REPO_DIR}" --reinstall\n'
+            'del "%~f0"\n'
+        )
+        tmp.close()
+        subprocess.Popen(
+            ["cmd", "/c", tmp.name],
+            creationflags=subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP,
+            close_fds=True,
+        )
+    else:
+        subprocess.run(["uv", "tool", "install", REPO_DIR, "--reinstall"], check=False)
+
     print(f"\n  {s['update_done']}")
     return True
 
