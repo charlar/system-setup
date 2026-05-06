@@ -71,9 +71,11 @@ cd /d "%REPO_DIR%"
 echo [setup] Ensuring Python is available / Verificando que Python este disponible...
 uv python install
 
-:: ---------- run setup ----------
+:: ---------- install and run ----------
+echo [setup] Installing system-setup tool / Instalando herramienta system-setup...
+uv tool install .
 echo [setup] Running setup / Ejecutando configuracion...
-uv run setup.py
+system-setup
 
 endlocal
 pause

@@ -49,6 +49,8 @@ cd "$REPO_DIR"
 info "Ensuring Python is available / Verificando que Python esté disponible..."
 uv python install
 
-# ---------- run setup ----------
+# ---------- install and run ----------
+info "Installing system-setup tool / Instalando herramienta system-setup..."
+uv tool install .
 info "Running setup / Ejecutando configuración..."
-uv run setup.py
+system-setup
