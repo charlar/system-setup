@@ -73,7 +73,7 @@ uv python install
 
 :: ---------- install and run ----------
 echo [setup] Installing system-setup tool / Instalando herramienta system-setup...
-uv tool install .
+uv tool install . --reinstall
 echo [setup] Running setup / Ejecutando configuracion...
 system-setup
 

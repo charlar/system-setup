@@ -51,6 +51,6 @@ uv python install
 
 # ---------- install and run ----------
 info "Installing system-setup tool / Instalando herramienta system-setup..."
-uv tool install .
+uv tool install . --reinstall
 info "Running setup / Ejecutando configuración..."
 system-setup

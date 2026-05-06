@@ -16,6 +16,13 @@ def _run(cmd: list[str], shell: bool = False) -> bool:
         return False
 
 
+def _text(cmd: list[str], shell: bool = False) -> str:
+    try:
+        return subprocess.run(cmd, capture_output=True, text=True, shell=shell).stdout.strip()
+    except Exception:
+        return ""
+
+
 def _exec(cmd: str) -> None:
     subprocess.run(cmd, shell=True, check=False)
 
@@ -26,7 +33,8 @@ IS_WSL = (
     and "microsoft" in platform.uname().release.lower()
 )
 
-# Glob patterns for common Windows install locations not always on PATH.
+REPO_DIR = os.path.join(os.path.expanduser("~"), "system-setup")
+
 WIN_PROBE_PATTERNS: dict[str, list[str]] = {
     "node": [
         r"C:\Program Files\nodejs\node.exe",
@@ -60,7 +68,6 @@ def _check(cmd: list[str]) -> bool:
         return True
     if not IS_WINDOWS:
         return False
-    # On Windows, .cmd/.bat files on PATH need shell=True to be found by name
     if _run(cmd, shell=True):
         return True
     for pattern in WIN_PROBE_PATTERNS.get(cmd[0], []):
@@ -88,6 +95,11 @@ STRINGS = {
         "choco_fail":    "Chocolatey could not be installed. Re-run this script as Administrator.",
         "npm_missing":   "npm is required for {name} but Node.js was not installed or needs a new terminal session.\n      Re-run system-setup to install Node.js first.",
         "npm_note":      "Note: Re-run system-setup and choose to install Node.js, then try again.",
+        "update_found":  "A newer version is available. Update now? [y/N] ",
+        "updating":      "Updating system-setup...",
+        "update_done":   "Updated. Please re-run system-setup.",
+        "update_skip":   "Skipping update.",
+        "update_err":    "Could not check for updates.",
         "done":          "Setup complete.",
     },
     "es": {
@@ -103,6 +115,11 @@ STRINGS = {
         "choco_fail":    "No se pudo instalar Chocolatey. Vuelva a ejecutar como Administrador.",
         "npm_missing":   "npm es necesario para {name} pero Node.js no fue instalado o requiere una nueva terminal.\n      Vuelva a ejecutar system-setup para instalar Node.js primero.",
         "npm_note":      "Nota: Vuelva a ejecutar system-setup y elija instalar Node.js primero.",
+        "update_found":  "Hay una versión más reciente disponible. ¿Actualizar ahora? [s/N] ",
+        "updating":      "Actualizando system-setup...",
+        "update_done":   "Actualizado. Por favor vuelva a ejecutar system-setup.",
+        "update_skip":   "Omitiendo actualización.",
+        "update_err":    "No se pudo verificar actualizaciones.",
         "done":          "Configuración completa.",
     },
 }
@@ -167,7 +184,7 @@ def _npm_available() -> bool:
 
 
 def _ensure_choco(s: dict) -> bool:
-    if _run(["choco", "--version"]):
+    if _run(["choco", "--version"]) or _run(["choco", "--version"], shell=True):
         return True
     choco_path = os.path.join(os.environ.get("ProgramData", "C:\\ProgramData"), "chocolatey", "bin")
     if os.path.exists(os.path.join(choco_path, "choco.exe")):
@@ -180,15 +197,52 @@ def _ensure_choco(s: dict) -> bool:
         "iex ((New-Object System.Net.WebClient).DownloadString('https://community.chocolatey.org/install.ps1'))\""
     )
     os.environ["PATH"] = choco_path + ";" + os.environ.get("PATH", "")
-    if _run(["choco", "--version"]):
+    if _run(["choco", "--version"]) or _run(["choco", "--version"], shell=True):
         return True
     print(f"  [!] {s['choco_fail']}")
     return False
 
 
+def _check_for_updates(s: dict) -> bool:
+    """Return True if an update was applied (caller should exit and ask user to re-run)."""
+    if not os.path.exists(os.path.join(REPO_DIR, ".git")):
+        return False
+    try:
+        subprocess.run(
+            ["git", "-C", REPO_DIR, "fetch", "--quiet"],
+            capture_output=True, timeout=10,
+        )
+        local  = _text(["git", "-C", REPO_DIR, "rev-parse", "HEAD"])
+        remote = _text(["git", "-C", REPO_DIR, "rev-parse", "@{u}"])
+        if not local or not remote or local == remote:
+            return False
+    except Exception:
+        print(f"  [!] {s['update_err']}")
+        return False
+
+    yes_chars = {"y", "s"}
+    try:
+        answer = input(f"\n  {s['update_found']}").strip().lower()
+    except (EOFError, KeyboardInterrupt):
+        answer = ""
+
+    if answer not in yes_chars:
+        print(f"  {s['update_skip']}")
+        return False
+
+    print(f"  {s['updating']}")
+    subprocess.run(["git", "-C", REPO_DIR, "pull", "--ff-only"], check=False)
+    subprocess.run(["uv", "tool", "install", REPO_DIR, "--reinstall"], check=False)
+    print(f"\n  {s['update_done']}")
+    return True
+
+
 def main() -> None:
     s = _choose_language()
     print(f"\n{s['title']}\n")
+
+    if _check_for_updates(s):
+        return
 
     choco_ready = not IS_WINDOWS
     npm_needed = False
