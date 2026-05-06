@@ -12,7 +12,7 @@ def _run(cmd: list[str], shell: bool = False) -> bool:
     try:
         subprocess.run(cmd, capture_output=True, check=True, shell=shell)
         return True
-    except (subprocess.CalledProcessError, FileNotFoundError):
+    except Exception:
         return False
 
 
