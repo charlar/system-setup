@@ -113,6 +113,11 @@ TOOLS = {
         "win_install": "choco install nodejs -y --no-progress",
         "wsl_install": "sudo apt-get update -qq && sudo apt-get install -y nodejs npm",
     },
+    "npm": {
+        "check":       ["npm", "--version"],
+        "win_install": "choco install nodejs -y --no-progress",
+        "wsl_install": "sudo apt-get update -qq && sudo apt-get install -y nodejs npm",
+    },
     "MySQL": {
         "check":       ["mysql", "--version"],
         "win_install": "choco install mysql -y --no-progress",
