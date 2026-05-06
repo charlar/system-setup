@@ -60,6 +60,9 @@ def _check(cmd: list[str]) -> bool:
         return True
     if not IS_WINDOWS:
         return False
+    # On Windows, .cmd/.bat files on PATH need shell=True to be found by name
+    if _run(cmd, shell=True):
+        return True
     for pattern in WIN_PROBE_PATTERNS.get(cmd[0], []):
         matches = glob.glob(pattern)
         if matches:
