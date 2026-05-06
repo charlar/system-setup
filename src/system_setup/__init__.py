@@ -82,43 +82,79 @@ def _check(cmd: list[str]) -> bool:
 
 
 # ---------------------------------------------------------------------------
-# Config file paths
+# Config file paths — .pg_service.conf in home dir on both platforms
 # ---------------------------------------------------------------------------
 
-def _pg_dir() -> str:
-    if IS_WINDOWS:
-        return os.path.join(os.environ.get("APPDATA", os.path.expanduser("~")), "postgresql")
-    return os.path.expanduser("~")
-
-
 def _pg_service_file() -> str:
-    if IS_WINDOWS:
-        return os.path.join(_pg_dir(), "pg_service.conf")
     return os.path.expanduser("~/.pg_service.conf")
 
 
 def _pgpass_file() -> str:
+    # Windows: %APPDATA%\postgresql\pgpass.conf  |  Linux: ~/.pgpass
     if IS_WINDOWS:
-        return os.path.join(_pg_dir(), "pgpass.conf")
+        return os.path.join(
+            os.environ.get("APPDATA", os.path.expanduser("~")),
+            "postgresql", "pgpass.conf",
+        )
     return os.path.expanduser("~/.pgpass")
 
 
 def _my_cnf_file() -> str:
-    if IS_WINDOWS:
-        return os.path.join(os.path.expanduser("~"), "my.cnf")
-    return os.path.expanduser("~/.my.cnf")
-
-
-def _pg_configured() -> bool:
-    return os.path.exists(_pg_service_file()) and os.path.exists(_pgpass_file())
-
-
-def _mysql_configured() -> bool:
-    return os.path.exists(_my_cnf_file())
+    return os.path.expanduser("~/.my.cnf") if not IS_WINDOWS else os.path.join(os.path.expanduser("~"), "my.cnf")
 
 
 # ---------------------------------------------------------------------------
-# Credential prompts + config writers
+# Surgical config file editors
+# ---------------------------------------------------------------------------
+
+def _remove_ini_section(lines: list[str], section: str) -> list[str]:
+    """Return lines with the named [section] block removed."""
+    result: list[str] = []
+    in_target = False
+    for line in lines:
+        stripped = line.strip()
+        if stripped == f"[{section}]":
+            in_target = True
+            continue
+        if in_target and stripped.startswith("["):
+            in_target = False
+        if not in_target:
+            result.append(line)
+    return result
+
+
+def _read_lines(path: str) -> list[str]:
+    try:
+        with open(path) as f:
+            return f.readlines()
+    except FileNotFoundError:
+        return []
+
+
+def _write_lines(path: str, lines: list[str], mode: int | None = None) -> None:
+    os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
+    with open(path, "w") as f:
+        f.writelines(lines)
+    if mode and not IS_WINDOWS:
+        os.chmod(path, mode)
+
+
+def _section_exists(lines: list[str], section: str) -> bool:
+    return any(l.strip() == f"[{section}]" for l in lines)
+
+
+def _pgpass_entry_exists(lines: list[str], host: str, port: str, db: str, user: str) -> bool:
+    prefix = f"{host}:{port}:{db}:{user}:"
+    return any(l.startswith(prefix) for l in lines)
+
+
+def _remove_pgpass_entry(lines: list[str], host: str, port: str, db: str, user: str) -> list[str]:
+    prefix = f"{host}:{port}:{db}:{user}:"
+    return [l for l in lines if not l.startswith(prefix)]
+
+
+# ---------------------------------------------------------------------------
+# Credential config writers
 # ---------------------------------------------------------------------------
 
 def _prompt_password(prompt: str) -> str:
@@ -128,49 +164,86 @@ def _prompt_password(prompt: str) -> str:
         return input(f"  {prompt}").strip()
 
 
-def _configure_postgresql(s: dict) -> None:
+def _configure_postgresql(s: dict, password: str = "") -> None:
     print()
-    service = input(f"  {s['pg_service_name']} [local]: ").strip() or "local"
-    password = _prompt_password(s["pg_password"])
+    service = input(f"  {s['pg_service_name']} [root]: ").strip() or "root"
+    if not password:
+        password = _prompt_password(s["pg_password"])
     if not password:
         return
 
-    os.makedirs(_pg_dir(), exist_ok=True)
+    # --- pg_service.conf ---
+    svc_path = _pg_service_file()
+    svc_lines = _read_lines(svc_path)
+    if _section_exists(svc_lines, service):
+        if not _ask(s["pg_overwrite"].format(file=".pg_service.conf", section=service), s):
+            pass  # keep existing
+        else:
+            svc_lines = _remove_ini_section(svc_lines, service)
+            svc_lines.append(
+                f"\n[{service}]\nhost=localhost\nport=5432\ndbname=postgres\nuser=postgres\n"
+            )
+            _write_lines(svc_path, svc_lines)
+    else:
+        svc_lines.append(
+            f"\n[{service}]\nhost=localhost\nport=5432\ndbname=postgres\nuser=postgres\n"
+        )
+        _write_lines(svc_path, svc_lines)
 
-    # pg_service.conf — append only if service not already present
-    svc_file = _pg_service_file()
-    existing = open(svc_file).read() if os.path.exists(svc_file) else ""
-    if f"[{service}]" not in existing:
-        with open(svc_file, "a") as f:
-            f.write(f"\n[{service}]\nhost=localhost\nport=5432\ndbname=postgres\nuser=postgres\n")
-
-    # pgpass — append only if entry not already present
-    pass_file = _pgpass_file()
-    entry = f"localhost:5432:*:postgres:{password}"
-    existing_pass = open(pass_file).read() if os.path.exists(pass_file) else ""
-    if "localhost:5432:*:postgres:" not in existing_pass:
-        with open(pass_file, "a") as f:
-            f.write(entry + "\n")
-    if not IS_WINDOWS:
-        os.chmod(pass_file, 0o600)
+    # --- pgpass ---
+    pass_path = _pgpass_file()
+    pass_lines = _read_lines(pass_path)
+    host, port, db, user = "localhost", "5432", "*", "postgres"
+    if _pgpass_entry_exists(pass_lines, host, port, db, user):
+        if _ask(s["pg_overwrite"].format(file=os.path.basename(pass_path), section="localhost:5432:*:postgres"), s):
+            pass_lines = _remove_pgpass_entry(pass_lines, host, port, db, user)
+            pass_lines.append(f"{host}:{port}:{db}:{user}:{password}\n")
+            _write_lines(pass_path, pass_lines, 0o600)
+    else:
+        pass_lines.append(f"{host}:{port}:{db}:{user}:{password}\n")
+        _write_lines(pass_path, pass_lines, 0o600)
 
     print(f"  [ok] {s['pg_config_done'].format(service=service)}")
 
 
-def _configure_mysql(s: dict) -> None:
+def _configure_mysql(s: dict, password: str = "") -> None:
     print()
-    password = _prompt_password(s["mysql_password"])
+    service = input(f"  {s['mysql_service_name']} [root]: ").strip() or "root"
+    if not password:
+        password = _prompt_password(s["mysql_password"])
     if not password:
         return
 
-    cnf = _my_cnf_file()
-    existing = open(cnf).read() if os.path.exists(cnf) else ""
-    if "[client]" not in existing:
-        with open(cnf, "a") as f:
-            f.write(f"[client]\nhost=localhost\nuser=root\npassword={password}\n")
-        if not IS_WINDOWS:
-            os.chmod(cnf, 0o600)
-    print(f"  [ok] {s['mysql_config_done']}")
+    cnf_path = _my_cnf_file()
+    cnf_lines = _read_lines(cnf_path)
+
+    # Write a [client{service}] group — e.g. [clientroot] — for --defaults-group-suffix
+    group = f"client{service}"
+    if _section_exists(cnf_lines, group):
+        if _ask(s["mysql_overwrite"].format(section=group), s):
+            cnf_lines = _remove_ini_section(cnf_lines, group)
+        else:
+            print(f"  [ok] {s['mysql_config_done'].format(service=service)}")
+            return
+
+    cnf_lines.append(f"\n[{group}]\nhost=localhost\nuser=root\npassword={password}\n")
+    _write_lines(cnf_path, cnf_lines, 0o600)
+    print(f"  [ok] {s['mysql_config_done'].format(service=service)}")
+
+
+# ---------------------------------------------------------------------------
+# Config-exists checks
+# ---------------------------------------------------------------------------
+
+def _pg_configured() -> bool:
+    svc = _read_lines(_pg_service_file())
+    pas = _read_lines(_pgpass_file())
+    return bool(svc) and bool(pas)
+
+
+def _mysql_configured() -> bool:
+    lines = _read_lines(_my_cnf_file())
+    return any(l.strip().startswith("[client") for l in lines)
 
 
 # ---------------------------------------------------------------------------
@@ -179,58 +252,64 @@ def _configure_mysql(s: dict) -> None:
 
 STRINGS = {
     "en": {
-        "title":           "=== System Setup ===",
-        "lang_prompt":     "Select language / Seleccione idioma:\n  [1] English\n  [2] Español\nChoice / Opción [1]: ",
-        "ok":              "already installed",
-        "ok_config":       "already installed and configured",
-        "ask":             "is not installed. Install it? [y/N] ",
-        "ask_config":      "is installed but not configured. Configure it now? [y/N] ",
-        "installing":      "Installing",
-        "success":         "installed successfully.",
-        "reopen":          "installation may need a new terminal session to take effect.",
-        "skip":            "Skipping",
-        "choco_install":   "Installing Chocolatey (required for Windows installs)...",
-        "choco_fail":      "Chocolatey could not be installed. Re-run this script as Administrator.",
-        "npm_missing":     "npm is required for {name} but Node.js was not installed or needs a new terminal session.\n      Re-run system-setup to install Node.js first.",
-        "npm_note":        "Note: Re-run system-setup and choose to install Node.js, then try again.",
-        "update_found":    "A newer version is available. Update now? [y/N] ",
-        "updating":        "Updating system-setup...",
-        "update_done":     "Updated. Please re-run system-setup.",
-        "update_skip":     "Skipping update.",
-        "update_err":      "Could not check for updates.",
-        "pg_service_name": "PostgreSQL service name for pg_service.conf",
-        "pg_password":     "PostgreSQL root (postgres) password: ",
-        "pg_config_done":  "pg_service.conf and pgpass written (service='{service}').",
-        "mysql_password":  "MySQL root password: ",
-        "mysql_config_done": "~/.my.cnf written.",
-        "done":            "Setup complete.",
+        "title":            "=== System Setup ===",
+        "lang_prompt":      "Select language / Seleccione idioma:\n  [1] English\n  [2] Español\nChoice / Opción [1]: ",
+        "ok":               "already installed",
+        "ok_config":        "already installed and configured",
+        "ask":              "is not installed. Install it? [y/N] ",
+        "ask_config":       "is installed but not configured. Configure it now? [y/N] ",
+        "installing":       "Installing",
+        "success":          "installed successfully.",
+        "reopen":           "installation may need a new terminal session to take effect.",
+        "skip":             "Skipping",
+        "choco_install":    "Installing Chocolatey (required for Windows installs)...",
+        "choco_fail":       "Chocolatey could not be installed. Re-run this script as Administrator.",
+        "npm_missing":      "npm is required for {name} but Node.js was not installed or needs a new terminal.\n      Re-run system-setup to install Node.js first.",
+        "npm_note":         "Note: Re-run system-setup and choose to install Node.js, then try again.",
+        "update_found":     "A newer version is available. Update now? [y/N] ",
+        "updating":         "Updating system-setup...",
+        "update_done":      "Updated. Please re-run system-setup.",
+        "update_skip":      "Skipping update.",
+        "update_err":       "Could not check for updates.",
+        "pg_service_name":  "PostgreSQL service name",
+        "pg_password":      "PostgreSQL password (postgres user): ",
+        "pg_overwrite":     "'{section}' already exists in {file}. Overwrite? [y/N] ",
+        "pg_config_done":   "pg_service.conf and pgpass written (psql service='{service}').",
+        "mysql_service_name": "MySQL login group name",
+        "mysql_password":   "MySQL root password: ",
+        "mysql_overwrite":  "'{section}' already exists in my.cnf. Overwrite? [y/N] ",
+        "mysql_config_done": "my.cnf written (mysql --defaults-group-suffix={service}).",
+        "done":             "Setup complete.",
     },
     "es": {
-        "title":           "=== Configuración del Sistema ===",
-        "lang_prompt":     "Select language / Seleccione idioma:\n  [1] English\n  [2] Español\nChoice / Opción [1]: ",
-        "ok":              "ya instalado",
-        "ok_config":       "ya instalado y configurado",
-        "ask":             "no está instalado. ¿Instalarlo? [s/N] ",
-        "ask_config":      "está instalado pero no configurado. ¿Configurarlo ahora? [s/N] ",
-        "installing":      "Instalando",
-        "success":         "instalado correctamente.",
-        "reopen":          "puede requerir una nueva sesión de terminal para tomar efecto.",
-        "skip":            "Omitiendo",
-        "choco_install":   "Instalando Chocolatey (necesario para instalaciones en Windows)...",
-        "choco_fail":      "No se pudo instalar Chocolatey. Vuelva a ejecutar como Administrador.",
-        "npm_missing":     "npm es necesario para {name} pero Node.js no fue instalado o requiere una nueva terminal.\n      Vuelva a ejecutar system-setup para instalar Node.js primero.",
-        "npm_note":        "Nota: Vuelva a ejecutar system-setup y elija instalar Node.js primero.",
-        "update_found":    "Hay una versión más reciente disponible. ¿Actualizar ahora? [s/N] ",
-        "updating":        "Actualizando system-setup...",
-        "update_done":     "Actualizado. Por favor vuelva a ejecutar system-setup.",
-        "update_skip":     "Omitiendo actualización.",
-        "update_err":      "No se pudo verificar actualizaciones.",
-        "pg_service_name": "Nombre del servicio PostgreSQL para pg_service.conf",
-        "pg_password":     "Contraseña de PostgreSQL (usuario postgres): ",
-        "pg_config_done":  "pg_service.conf y pgpass escritos (service='{service}').",
-        "mysql_password":  "Contraseña de MySQL root: ",
-        "mysql_config_done": "~/.my.cnf escrito.",
-        "done":            "Configuración completa.",
+        "title":            "=== Configuración del Sistema ===",
+        "lang_prompt":      "Select language / Seleccione idioma:\n  [1] English\n  [2] Español\nChoice / Opción [1]: ",
+        "ok":               "ya instalado",
+        "ok_config":        "ya instalado y configurado",
+        "ask":              "no está instalado. ¿Instalarlo? [s/N] ",
+        "ask_config":       "está instalado pero no configurado. ¿Configurarlo ahora? [s/N] ",
+        "installing":       "Instalando",
+        "success":          "instalado correctamente.",
+        "reopen":           "puede requerir una nueva sesión de terminal para tomar efecto.",
+        "skip":             "Omitiendo",
+        "choco_install":    "Instalando Chocolatey (necesario para instalaciones en Windows)...",
+        "choco_fail":       "No se pudo instalar Chocolatey. Vuelva a ejecutar como Administrador.",
+        "npm_missing":      "npm es necesario para {name} pero Node.js no fue instalado o requiere nueva terminal.\n      Vuelva a ejecutar system-setup para instalar Node.js primero.",
+        "npm_note":         "Nota: Vuelva a ejecutar system-setup y elija instalar Node.js primero.",
+        "update_found":     "Hay una versión más reciente disponible. ¿Actualizar ahora? [s/N] ",
+        "updating":         "Actualizando system-setup...",
+        "update_done":      "Actualizado. Por favor vuelva a ejecutar system-setup.",
+        "update_skip":      "Omitiendo actualización.",
+        "update_err":       "No se pudo verificar actualizaciones.",
+        "pg_service_name":  "Nombre del servicio PostgreSQL",
+        "pg_password":      "Contraseña de PostgreSQL (usuario postgres): ",
+        "pg_overwrite":     "'{section}' ya existe en {file}. ¿Sobreescribir? [s/N] ",
+        "pg_config_done":   "pg_service.conf y pgpass escritos (psql service='{service}').",
+        "mysql_service_name": "Nombre del grupo MySQL",
+        "mysql_password":   "Contraseña de MySQL root: ",
+        "mysql_overwrite":  "'{section}' ya existe en my.cnf. ¿Sobreescribir? [s/N] ",
+        "mysql_config_done": "my.cnf escrito (mysql --defaults-group-suffix={service}).",
+        "done":             "Configuración completa.",
     },
 }
 
@@ -253,7 +332,6 @@ TOOLS: dict[str, dict] = {
         "check":        ["mysql", "--version"],
         "config_check": _mysql_configured,
         "configure":    _configure_mysql,
-        # password injected at runtime — see _build_install_cmd
         "win_install":  "choco install mysql --params '/RootPassword:{password}' -y --no-progress",
         "wsl_install":  "sudo apt-get update -qq && sudo apt-get install -y mysql-server",
         "wsl_post":     "sudo mysql -e \"ALTER USER 'root'@'localhost' IDENTIFIED WITH mysql_native_password BY '{password}'; FLUSH PRIVILEGES;\"",
@@ -354,14 +432,6 @@ def _check_for_updates(s: dict) -> bool:
     return True
 
 
-def _prompt_install_password(name: str, cfg: dict, s: dict) -> str:
-    """Ask for a password when it's needed for both install and config."""
-    if "configure" not in cfg:
-        return ""
-    key = "pg_password" if name == "PostgreSQL" else "mysql_password"
-    return _prompt_password(s[key])
-
-
 # ---------------------------------------------------------------------------
 # main
 # ---------------------------------------------------------------------------
@@ -377,7 +447,7 @@ def main() -> None:
     npm_needed  = False
 
     for name, cfg in TOOLS.items():
-        installed = _check(cfg["check"])
+        installed  = _check(cfg["check"])
         has_config = "configure" in cfg
         configured = has_config and cfg["config_check"]()
 
@@ -386,7 +456,6 @@ def main() -> None:
             continue
 
         if installed and has_config and not configured:
-            # Tool present but config files missing — offer to configure only
             if _ask(f"{name} {s['ask_config']}", s):
                 cfg["configure"](s)
             else:
@@ -398,10 +467,11 @@ def main() -> None:
             print(f"  [--] {s['skip']} {name}")
             continue
 
-        # Prompt for password before install (needed in install cmd and config)
+        # For tools that need credentials, ask before installing
         password = ""
         if has_config:
-            password = _prompt_install_password(name, cfg, s)
+            key = "pg_password" if name == "PostgreSQL" else "mysql_password"
+            password = _prompt_password(s[key])
 
         install_cmd = cfg["win_install"] if IS_WINDOWS else cfg["wsl_install"]
         install_cmd = install_cmd.format(password=password)
@@ -420,14 +490,13 @@ def main() -> None:
         print(f"  {s['installing']} {name}...")
         _exec(install_cmd)
 
-        # WSL post-install password setup
         if not IS_WINDOWS and password and "wsl_post" in cfg:
             _exec(cfg["wsl_post"].format(password=password))
 
         if _check(cfg["check"]):
             print(f"  [ok] {name} {s['success']}")
             if has_config and password:
-                cfg["configure"](s)
+                cfg["configure"](s, password=password)
         else:
             print(f"  [!] {name} {s['reopen']}")
 
