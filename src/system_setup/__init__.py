@@ -437,20 +437,22 @@ def _check_for_updates(s: dict) -> bool:
     subprocess.run(["git", "-C", REPO_DIR, "pull", "--ff-only"], check=False)
 
     if IS_WINDOWS:
-        # Can't reinstall a running .exe on Windows — schedule via detached batch file
+        # Can't reinstall a running .exe on Windows — schedule via detached batch file.
+        # Resolve uv's full path now; the detached process won't inherit our PATH.
+        import shutil
         import tempfile
+        uv_exe = shutil.which("uv") or "uv"
         tmp = tempfile.NamedTemporaryFile(suffix=".cmd", delete=False, mode="w")
         tmp.write(
             "@echo off\n"
             "timeout /t 2 /nobreak >nul\n"
-            f'uv tool install "{REPO_DIR}" --reinstall\n'
+            f'"{uv_exe}" tool install "{REPO_DIR}" --reinstall\n'
             'del "%~f0"\n'
         )
         tmp.close()
         subprocess.Popen(
             ["cmd", "/c", tmp.name],
             creationflags=subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP,
-            close_fds=True,
         )
     else:
         subprocess.run(["uv", "tool", "install", REPO_DIR, "--reinstall"], check=False)
