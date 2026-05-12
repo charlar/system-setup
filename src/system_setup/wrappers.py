@@ -22,22 +22,27 @@ MYSQL_PATTERNS = [
 
 
 def _find_real(name: str, win_patterns: list[str]) -> str | None:
-    """Find the real executable, skipping our own wrapper to avoid recursion."""
-    our = os.path.normcase(os.path.abspath(sys.argv[0]))
-    exts = ["", ".exe", ".cmd"] if IS_WINDOWS else [""]
-
-    for directory in os.environ.get("PATH", "").split(os.pathsep):
-        for ext in exts:
-            candidate = os.path.join(directory, name + ext)
-            if os.path.isfile(candidate) and os.path.normcase(os.path.abspath(candidate)) != our:
-                return candidate
-
+    """Find the real executable without risking calling our own wrapper."""
     if IS_WINDOWS:
+        # Skip PATH entirely on Windows — the wrapper exists because the real
+        # binary is NOT on PATH. Go straight to known install locations.
         for pattern in win_patterns:
             matches = glob.glob(pattern)
             if matches:
                 return matches[0]
+        return None
 
+    # Linux/WSL: search PATH but skip our own exe using samefile() for reliability
+    our = os.path.abspath(sys.argv[0])
+    for directory in os.environ.get("PATH", "").split(os.pathsep):
+        candidate = os.path.join(directory, name)
+        if os.path.isfile(candidate):
+            try:
+                if not os.path.samefile(candidate, our):
+                    return candidate
+            except OSError:
+                if os.path.abspath(candidate) != our:
+                    return candidate
     return None
 
 
