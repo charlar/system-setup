@@ -6,6 +6,8 @@ dependencies = []
 
 [project.scripts]
 system-setup = "system_setup:main"
+psql          = "system_setup.wrappers:psql"
+mysql         = "system_setup.wrappers:mysql"
 
 [build-system]
 requires = ["hatchling"]
