@@ -418,11 +418,11 @@ def _check_for_updates(s: dict) -> bool:
         return False
     try:
         subprocess.run(
-            ["git", "-C", REPO_DIR, "fetch", "--quiet"],
-            capture_output=True, timeout=10,
+            ["git", "-C", REPO_DIR, "fetch", "origin", "--quiet"],
+            capture_output=True, timeout=15,
         )
         local  = _text(["git", "-C", REPO_DIR, "rev-parse", "HEAD"])
-        remote = _text(["git", "-C", REPO_DIR, "rev-parse", "@{u}"])
+        remote = _text(["git", "-C", REPO_DIR, "rev-parse", "origin/master"])
         if not local or not remote or local == remote:
             return False
     except Exception:
