@@ -66,6 +66,9 @@ if exist "%REPO_DIR%\.git" (
     git clone %REPO_URL% "%REPO_DIR%"
 )
 
+:: Allow git to trust this directory regardless of who created it
+git config --global --add safe.directory "%REPO_DIR%"
+
 :: ---------- Python via uv ----------
 cd /d "%REPO_DIR%"
 echo [setup] Ensuring Python is available / Verificando que Python este disponible...

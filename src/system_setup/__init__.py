@@ -417,6 +417,11 @@ def _check_for_updates(s: dict) -> bool:
     if not os.path.exists(os.path.join(REPO_DIR, ".git")):
         return False
     try:
+        # Ensure git trusts this directory regardless of who created it
+        subprocess.run(
+            ["git", "config", "--global", "--add", "safe.directory", REPO_DIR],
+            capture_output=True,
+        )
         subprocess.run(
             ["git", "-C", REPO_DIR, "fetch", "origin", "--quiet"],
             capture_output=True, timeout=15,

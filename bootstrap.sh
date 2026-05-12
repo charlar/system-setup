@@ -44,6 +44,9 @@ else
     git clone "$REPO_URL" "$REPO_DIR"
 fi
 
+# Allow git to trust this directory regardless of who created it
+git config --global --add safe.directory "$REPO_DIR"
+
 # ---------- Python via uv ----------
 cd "$REPO_DIR"
 info "Ensuring Python is available / Verificando que Python esté disponible..."
