@@ -1,13 +1,19 @@
 [project]
 name = "system-setup"
-version = "0.1.0"
+version = "0.2.0"
 requires-python = ">=3.11"
-dependencies = []
+dependencies = [
+    # GUI (system-setupg) is Windows-only; the CLI stays dependency-free
+    "pywebview>=5.0; sys_platform == 'win32'",
+]
 
 [project.scripts]
 system-setup = "system_setup:main"
 psql          = "system_setup.wrappers:psql"
 mysql         = "system_setup.wrappers:mysql"
+
+[project.gui-scripts]
+system-setupg = "system_setup.gui:main"
 
 [build-system]
 requires = ["hatchling"]

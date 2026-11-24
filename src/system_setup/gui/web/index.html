@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>System Setup</title>
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+<div class="app">
+  <nav class="sidebar">
+    <div class="brand">System Setup</div>
+    <button class="nav active" data-tab="tools">Windows tools</button>
+    <button class="nav" data-tab="wsl">WSL &amp; Docker</button>
+    <button class="nav" data-tab="pg">PostgreSQL</button>
+    <button class="nav" data-tab="mysql">MySQL</button>
+    <button class="nav" data-tab="files">Config files</button>
+    <div class="spacer"></div>
+    <div class="meta" id="meta"></div>
+  </nav>
+
+  <main>
+    <div id="banners"></div>
+
+    <!-- Windows tools -->
+    <section class="tab" id="tab-tools">
+      <header class="tab-head">
+        <div>
+          <h1>Windows tools</h1>
+          <p class="sub">Installed with Chocolatey unless noted. Status is checked live.</p>
+        </div>
+        <button class="btn" id="tools-refresh">Refresh</button>
+      </header>
+      <div class="list" id="tools-list"><div class="empty">Checking what's installed…</div></div>
+    </section>
+
+    <!-- WSL -->
+    <section class="tab hidden" id="tab-wsl">
+      <header class="tab-head">
+        <div>
+          <h1>WSL &amp; Docker</h1>
+          <p class="sub">Docker Engine runs inside your WSL distro. Commands run as root through <code>wsl -u root</code>, so there's no sudo prompt.</p>
+        </div>
+        <button class="btn" id="wsl-refresh">Refresh</button>
+      </header>
+      <div id="wsl-body"><div class="empty">Checking WSL…</div></div>
+    </section>
+
+    <!-- PostgreSQL -->
+    <section class="tab hidden" id="tab-pg">
+      <header class="tab-head">
+        <div>
+          <h1>PostgreSQL services</h1>
+          <p class="sub">Saved connections. Connect with <code>psql service=<i>name</i></code> — no password prompt.</p>
+        </div>
+        <button class="btn primary" id="pg-add">Add service</button>
+      </header>
+      <div class="list" id="pg-list"></div>
+      <div class="files-foot" id="pg-files"></div>
+    </section>
+
+    <!-- MySQL -->
+    <section class="tab hidden" id="tab-mysql">
+      <header class="tab-head">
+        <div>
+          <h1>MySQL logins</h1>
+          <p class="sub">Saved logins. Connect with <code>mysql --defaults-group-suffix=<i>name</i></code>.</p>
+        </div>
+        <button class="btn primary" id="my-add">Add login</button>
+      </header>
+      <div class="list" id="my-list"></div>
+      <div class="files-foot" id="my-files"></div>
+    </section>
+
+    <!-- Files -->
+    <section class="tab hidden" id="tab-files">
+      <header class="tab-head">
+        <div>
+          <h1>Config files</h1>
+          <p class="sub">Where everything lives on this PC. Edit opens VS Code if installed, otherwise Notepad.</p>
+        </div>
+      </header>
+      <div class="list" id="files-list"></div>
+    </section>
+  </main>
+</div>
+
+<!-- Job log drawer -->
+<div class="drawer hidden" id="drawer">
+  <div class="drawer-head">
+    <span class="dot" id="job-dot"></span>
+    <strong id="job-title"></strong>
+    <span class="spacer"></span>
+    <button class="btn small" id="job-copy">Copy log</button>
+    <button class="btn small" id="job-close">Hide</button>
+  </div>
+  <pre id="job-log"></pre>
+</div>
+
+<!-- Modal -->
+<div class="modal-bg hidden" id="modal-bg">
+  <form class="modal" id="modal" autocomplete="off">
+    <h2 id="modal-title"></h2>
+    <div id="modal-body"></div>
+    <div class="modal-error" id="modal-error"></div>
+    <div class="modal-actions">
+      <button type="button" class="btn" id="modal-cancel">Cancel</button>
+      <button type="submit" class="btn primary" id="modal-ok">Save</button>
+    </div>
+  </form>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>

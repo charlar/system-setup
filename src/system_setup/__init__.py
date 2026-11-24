@@ -48,6 +48,7 @@ WIN_PROBE_PATTERNS: dict[str, list[str]] = {
     "mysql": [
         r"C:\Program Files\MySQL\MySQL Server *\bin\mysql.exe",
         r"C:\Program Files\MySQL\*\bin\mysql.exe",
+        r"C:\tools\mysql\*\bin\mysql.exe",
     ],
     "psql": [
         r"C:\Program Files\PostgreSQL\*\bin\psql.exe",
@@ -340,7 +341,9 @@ TOOLS: dict[str, dict] = {
         "check":        ["mysql", "--version"],
         "config_check": _mysql_configured,
         "configure":    _configure_mysql,
-        "win_install":  "choco install mysql --params '/RootPassword:{password}' -y --no-progress",
+        "win_install":  "choco install mysql -y --no-progress",
+        # choco's mysql package has no root-password parameter; root starts with no password
+        "win_post":     "mysql -u root --skip-password -e \"ALTER USER 'root'@'localhost' IDENTIFIED BY '{password}';\"",
         "wsl_install":  "sudo apt-get update -qq && sudo apt-get install -y mysql-server",
         "wsl_post":     "sudo mysql -e \"ALTER USER 'root'@'localhost' IDENTIFIED WITH mysql_native_password BY '{password}'; FLUSH PRIVILEGES;\"",
     },
@@ -348,7 +351,7 @@ TOOLS: dict[str, dict] = {
         "check":        ["psql", "--version"],
         "config_check": _pg_configured,
         "configure":    _configure_postgresql,
-        "win_install":  "choco install postgresql --params '/Password:{password}' -y --no-progress",
+        "win_install":  "choco install postgresql --params '/Password:{password}' --params-global -y --no-progress",
         "wsl_install":  "sudo apt-get update -qq && sudo apt-get install -y postgresql",
         "wsl_post":     "sudo -u postgres psql -c \"ALTER USER postgres PASSWORD '{password}';\"",
     },
@@ -414,24 +417,8 @@ def _ensure_choco(s: dict) -> bool:
 
 
 def _check_for_updates(s: dict) -> bool:
-    if not os.path.exists(os.path.join(REPO_DIR, ".git")):
-        return False
-    try:
-        # Ensure git trusts this directory regardless of who created it
-        subprocess.run(
-            ["git", "config", "--global", "--add", "safe.directory", REPO_DIR],
-            capture_output=True,
-        )
-        subprocess.run(
-            ["git", "-C", REPO_DIR, "fetch", "origin", "--quiet"],
-            capture_output=True, timeout=15,
-        )
-        local  = _text(["git", "-C", REPO_DIR, "rev-parse", "HEAD"])
-        remote = _text(["git", "-C", REPO_DIR, "rev-parse", "origin/master"])
-        if not local or not remote or local == remote:
-            return False
-    except Exception:
-        print(f"  [!] {s['update_err']}")
+    from . import updater
+    if not updater.update_available():
         return False
 
     if not _ask(s["update_found"], s):
@@ -439,28 +426,11 @@ def _check_for_updates(s: dict) -> bool:
         return False
 
     print(f"  {s['updating']}")
-    subprocess.run(["git", "-C", REPO_DIR, "pull", "--ff-only"], check=False)
-
-    if IS_WINDOWS:
-        # Can't reinstall a running .exe on Windows — schedule via detached batch file.
-        # Resolve uv's full path now; the detached process won't inherit our PATH.
-        import shutil
-        import tempfile
-        uv_exe = shutil.which("uv") or "uv"
-        tmp = tempfile.NamedTemporaryFile(suffix=".cmd", delete=False, mode="w")
-        tmp.write(
-            "@echo off\n"
-            "timeout /t 2 /nobreak >nul\n"
-            f'"{uv_exe}" tool install "{REPO_DIR}" --reinstall\n'
-            'del "%~f0"\n'
-        )
-        tmp.close()
-        subprocess.Popen(
-            ["cmd", "/c", tmp.name],
-            creationflags=subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP,
-        )
-    else:
-        subprocess.run(["uv", "tool", "install", REPO_DIR, "--reinstall"], check=False)
+    ok, out = updater.pull()
+    if not ok:
+        print(f"  [!] {s['update_err']}\n{out}")
+        return False
+    updater.schedule_reinstall()
 
     print(f"\n  {s['update_done']}")
     return True
@@ -524,8 +494,9 @@ def main() -> None:
         print(f"  {s['installing']} {name}...")
         _exec(install_cmd)
 
-        if not IS_WINDOWS and password and "wsl_post" in cfg:
-            _exec(cfg["wsl_post"].format(password=password))
+        post_key = "win_post" if IS_WINDOWS else "wsl_post"
+        if password and post_key in cfg and _check(cfg["check"]):
+            _exec(cfg[post_key].format(password=password))
 
         if _check(cfg["check"]):
             print(f"  [ok] {name} {s['success']}")

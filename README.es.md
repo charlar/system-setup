@@ -57,6 +57,22 @@ system-setup
 
 ---
 
+## system-setupg (aplicación de escritorio, Windows)
+
+Después de la configuración, ejecute `system-setupg` para abrir una ventana donde puede:
+
+- **Herramientas de Windows**: ver qué está instalado e instalar o quitar Git, Node.js, PostgreSQL, MySQL, VS Code, GitHub CLI, Claude Code y Codex.
+- **WSL y Docker**: instalar Docker Engine dentro de WSL (activa systemd y lo agrega al grupo `docker`), o instalar/quitar paquetes apt. Se ejecuta como root con `wsl -u root`, sin pedir contraseña de sudo.
+- **PostgreSQL**: agregar, editar, eliminar y probar conexiones guardadas (`psql service=nombre`); las contraseñas se guardan en pgpass.
+- **MySQL**: lo mismo para inicios de sesión guardados (`mysql --defaults-group-suffix=nombre`).
+- **Archivos de configuración**: la ubicación de cada archivo, con botones Editar y Mostrar en carpeta.
+
+Pide permisos de administrador al iniciar, porque Chocolatey los necesita. Si los rechaza, las conexiones guardadas y WSL siguen funcionando. Cuando hay una nueva versión, aparece un aviso con **Update and restart**. (Por ahora la ventana está solo en inglés).
+
+Registro: `%LOCALAPPDATA%\system-setup\gui.log`.
+
+---
+
 ## Wrappers de psql y mysql
 
 Los comandos `psql` y `mysql` se instalan como wrappers que encuentran el binario real aunque no esté en el PATH (habitual en Windows tras una instalación con interfaz gráfica). Todos los argumentos de la línea de comandos se pasan sin cambios:

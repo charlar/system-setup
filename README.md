@@ -57,6 +57,22 @@ system-setup
 
 ---
 
+## system-setupg (desktop app, Windows)
+
+After setup, run `system-setupg` (Start → Run, or any terminal) for a window where you can:
+
+- **Windows tools** — see what's installed and install/remove Git, Node.js, PostgreSQL, MySQL, VS Code, GitHub CLI, Claude Code and Codex.
+- **WSL & Docker** — install Docker Engine inside your WSL distro (enables systemd, adds you to the `docker` group), or install/remove apt packages. Runs as root via `wsl -u root`, so there's no sudo prompt.
+- **PostgreSQL** — add/edit/delete/test saved connections (`psql service=name`), with passwords kept in pgpass.
+- **MySQL** — the same for saved logins (`mysql --defaults-group-suffix=name`).
+- **Config files** — every config file's location, with Edit and Show in folder buttons.
+
+It asks for administrator rights when it starts, because Chocolatey needs them. If you say no, saved connections and WSL still work. When a new version is pushed, a banner offers **Update and restart**.
+
+Logs: `%LOCALAPPDATA%\system-setup\gui.log`. Use `system-setupg --debug` to get browser dev tools.
+
+---
+
 ## psql and mysql wrappers
 
 The `psql` and `mysql` commands are installed as wrappers that find the real binary even when it is not on PATH (common on Windows after a GUI install). All command-line arguments are passed through unchanged:
