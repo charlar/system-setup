@@ -83,6 +83,8 @@ class Api:
         return {
             "version": ver,
             "admin": winenv.is_admin(),
+            # "admin" = admin account (UAC keeps the same user); "standard" = UAC asks for another account
+            "account": "admin" if winenv.is_admin_account() else "standard",
             "windows": IS_WINDOWS,
             "update": self._update,
             "repo": updater.REPO_DIR,
@@ -99,7 +101,10 @@ class Api:
 
     @_api
     def restart_as_admin(self):
-        if winenv.relaunch_elevated("system_setup.gui"):
+        if not winenv.is_admin_account():
+            # elevating would switch to a different Windows user (and their config files)
+            raise RuntimeError(t("err.standard_account"))
+        if winenv.relaunch_elevated("system_setup.gui", ["--no-elevate"]):
             self._window.destroy()
             return True
         raise RuntimeError(t("err.elevation_cancelled"))
@@ -139,9 +144,7 @@ class Api:
         tool = tools.BY_ID.get(tool_id)
         if not tool:
             raise ValueError(f"Unknown tool {tool_id}")
-        if tool.needs_admin and not winenv.is_admin():
-            raise PermissionError(t("err.needs_admin_choco"))
-        return tool
+        return tool   # choco steps ask for admin themselves (jobs.Step.elevated) when needed
 
     @_api
     def install_tool(self, tool_id, password=""):
@@ -165,8 +168,8 @@ class Api:
 
     @_api
     def wsl_install(self):
-        if not winenv.is_admin():
-            raise PermissionError(t("err.needs_admin_wsl"))
+        # Not elevated on purpose: wsl --install asks for admin itself, and the
+        # distro must be registered for THIS user, not an administrator account.
         wsl.install_wsl()
         return True
 
@@ -304,7 +307,9 @@ def main() -> None:
         print("system-setupg is a Windows app. Run it from Windows — it manages WSL from there.")
         sys.exit(1)
 
-    if not args.no_elevate and not args.selftest and not winenv.is_admin():
+    # Only admin accounts elevate the whole window. On a standard account UAC
+    # would switch to another user, so we stay as the user and elevate per install.
+    if not args.no_elevate and not args.selftest and not winenv.is_admin() and winenv.is_admin_account():
         extra = ["--debug"] if args.debug else []
         if winenv.relaunch_elevated("system_setup.gui", extra + ["--no-elevate"]):
             return
@@ -320,5 +325,5 @@ def main() -> None:
         width=1120, height=780, min_size=(860, 560),
     )
     api._window = window
-    log.info("starting window (admin=%s)", winenv.is_admin())
+    log.info("starting window (admin=%s, elevation=%s)", winenv.is_admin(), winenv.elevation_type())
     webview.start(debug=args.debug)

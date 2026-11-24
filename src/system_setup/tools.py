@@ -182,7 +182,7 @@ def _ensure_choco(job: Job) -> bool:
         ["powershell", "-NoProfile", "-InputFormat", "None", "-ExecutionPolicy", "Bypass", "-Command",
          "[System.Net.ServicePointManager]::SecurityProtocol = 3072; "
          "iex ((New-Object System.Net.WebClient).DownloadString('https://community.chocolatey.org/install.ps1'))"],
-        display="Install Chocolatey (community.chocolatey.org/install.ps1)"))
+        display="Install Chocolatey (community.chocolatey.org/install.ps1)", elevated=True))
     refresh_path()
     if ok and choco_exe():
         return True
@@ -193,7 +193,8 @@ def _ensure_choco(job: Job) -> bool:
 def _choco(*args: str, display: str = "") -> Step:
     """A choco step that resolves choco.exe at run time (it may have just been installed)."""
     def run(job: Job) -> bool:
-        return run_cmd(job, Step([choco_exe() or "choco", *args], display=display or "choco " + " ".join(args)))
+        return run_cmd(job, Step([choco_exe() or "choco", *args], display=display or "choco " + " ".join(args),
+                                 elevated=True))
     return Step(call=run)
 
 

@@ -4,15 +4,18 @@ thread and collects output so the GUI can poll it. One job at a time — choco
 and apt both hold locks, so parallel installs would just fail anyway.
 """
 import itertools
+import json
 import os
 import subprocess
+import tempfile
 import threading
 import time
 from dataclasses import dataclass, field
 from typing import Callable
 
 from .i18n import t
-from .winenv import NO_WINDOW, refresh_path
+from . import winenv
+from .winenv import IS_WINDOWS, NO_WINDOW, refresh_path
 
 # choco: 1641 / 3010 = success, reboot required
 REBOOT_CODES = {1641, 3010}
@@ -27,6 +30,7 @@ class Step:
     ok_codes: tuple[int, ...] = (0,)
     call: Callable[["Job"], bool] | None = None   # Python step; return False to fail the job
     allow_fail: bool = False
+    elevated: bool = False            # needs admin: run through UAC if we aren't elevated
 
 
 @dataclass
@@ -101,9 +105,68 @@ class JobRunner:
                 pass
 
 
+def _finish(job: Job, step: Step, code: int) -> bool:
+    if code in REBOOT_CODES:
+        job.reboot = True
+        return True
+    if code not in step.ok_codes:
+        job.log(f"[exit code {code}]")
+        return False
+    return True
+
+
+def _append_output(job: Job, data: bytes) -> None:
+    for raw in data.splitlines():
+        text = raw.decode("utf-8", errors="replace").replace("\x00", "")
+        job.lines.append(text.split("\r")[-1])
+
+
+def run_elevated(job: Job, step: Step) -> bool:
+    """Run step.argv through UAC via system_setup.elevated, tailing its log file."""
+    tmp = tempfile.mkdtemp(prefix="system-setup-")
+    log_path = os.path.join(tmp, "output.log")
+    spec_path = os.path.join(tmp, "spec.json")
+    open(log_path, "wb").close()
+    with open(spec_path, "w", encoding="utf-8") as f:
+        json.dump({"argv": step.argv, "log": log_path}, f)
+    job.log(t("log.elevating"))
+    try:
+        try:
+            handle = winenv.start_elevated_helper(spec_path)
+        except winenv.ElevationCancelled:
+            job.log(t("log.elevation_cancelled"))
+            return False
+        pos, pending = 0, b""
+        code = None
+        while code is None:
+            code = winenv.wait_handle(handle, 300)
+            with open(log_path, "rb") as f:
+                f.seek(pos)
+                chunk = f.read()
+            pos += len(chunk)
+            data = pending + chunk
+            # only emit complete lines until the process is done
+            cut = data.rfind(b"\n") + 1 if code is None else len(data)
+            _append_output(job, data[:cut])
+            pending = data[cut:]
+        return _finish(job, step, code)
+    finally:
+        for p in (spec_path, log_path):
+            try:
+                os.remove(p)
+            except OSError:
+                pass
+        try:
+            os.rmdir(tmp)
+        except OSError:
+            pass
+
+
 def run_cmd(job: Job, step: Step) -> bool:
     refresh_path()
     job.log(f"> {step.display or subprocess.list2cmdline(step.argv)}")
+    if step.elevated and IS_WINDOWS and not winenv.is_admin():
+        return run_elevated(job, step)
     env = dict(os.environ, WSL_UTF8="1", PYTHONIOENCODING="utf-8")
     if step.env:
         env.update(step.env)
@@ -132,11 +195,4 @@ def run_cmd(job: Job, step: Step) -> bool:
         # progress bars redraw with \r — keep only the final state of the line
         text = text.split("\r")[-1]
         job.lines.append(text)
-    code = proc.wait()
-    if code in REBOOT_CODES:
-        job.reboot = True
-        return True
-    if code not in step.ok_codes:
-        job.log(f"[exit code {code}]")
-        return False
-    return True
+    return _finish(job, step, proc.wait())

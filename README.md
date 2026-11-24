@@ -67,7 +67,12 @@ After setup, run `system-setupg` (Start → Run, or any terminal) for a window w
 - **MySQL** — the same for saved logins (`mysql --defaults-group-suffix=name`).
 - **Config files** — every config file's location, with Edit and Show in folder buttons.
 
-It asks for administrator rights when it starts, because Chocolatey needs them. If you say no, saved connections and WSL still work. When a new version is pushed, a banner offers **Update and restart**.
+Chocolatey needs administrator rights:
+
+- **Admin account:** it asks once when it starts. If you say no, each Chocolatey install asks instead.
+- **Standard account:** the window runs as you (so saved connections stay in your own profile), and each Chocolatey install asks for an administrator's password.
+
+When a new version is pushed, a banner offers **Update and restart**.
 
 The language (English/Español) switch is at the bottom left. The choice is remembered in `%APPDATA%\system-setup\settings.ini` and shared with `system-setup`, which now asks only once (`system-setup --language` to change it).
 

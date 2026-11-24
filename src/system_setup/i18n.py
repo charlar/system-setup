@@ -89,8 +89,9 @@ MESSAGES: dict[str, dict[str, str]] = {
         "err.elevation_cancelled": "Elevation was cancelled.",
         "err.wait_for_job": "Wait for the running install to finish first.",
         "err.pull_failed": "git pull failed:\n{out}",
-        "err.needs_admin_choco": "Chocolatey installs need administrator rights — click 'Restart as administrator'.",
-        "err.needs_admin_wsl": "Installing WSL needs administrator rights.",
+        "err.standard_account": "This is a standard Windows account — installs ask for an administrator's password one at a time instead.",
+        "log.elevating": "Asking for administrator permission (check for a Windows prompt)...",
+        "log.elevation_cancelled": "[error] Administrator permission was not given.",
 
         # config files tab
         "file.pg_services": "PostgreSQL services",
@@ -168,8 +169,9 @@ MESSAGES: dict[str, dict[str, str]] = {
         "err.elevation_cancelled": "Se canceló la solicitud de permisos de administrador.",
         "err.wait_for_job": "Espere a que termine la instalación en curso.",
         "err.pull_failed": "git pull falló:\n{out}",
-        "err.needs_admin_choco": "Las instalaciones con Chocolatey requieren permisos de administrador — haga clic en 'Reiniciar como administrador'.",
-        "err.needs_admin_wsl": "Instalar WSL requiere permisos de administrador.",
+        "err.standard_account": "Esta es una cuenta estándar de Windows — cada instalación pide la contraseña de un administrador por separado.",
+        "log.elevating": "Solicitando permiso de administrador (busque la ventana de Windows)...",
+        "log.elevation_cancelled": "[error] No se concedió el permiso de administrador.",
 
         "file.pg_services": "Servicios de PostgreSQL",
         "file.pg_passwords": "Contraseñas de PostgreSQL",

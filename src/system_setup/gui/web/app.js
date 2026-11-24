@@ -220,7 +220,7 @@ async function loadTools() {
     const pill = tool.installed
       ? `<span class="pill ok">${tr("tools.installed")}${tool.source === "other" ? tr("tools.not_choco") : ""}</span>`
       : `<span class="pill no">${tr("tools.not_installed")}</span>`;
-    const locked = tool.needs_admin && !state.admin;
+    const uac = tool.needs_admin && !state.admin;   // will show a Windows admin prompt
     row.innerHTML = `
       <div class="main">
         <div class="title">${esc(tool.name)} ${pill}</div>
@@ -229,11 +229,12 @@ async function loadTools() {
       </div>
       <div class="actions"></div>`;
     const actions = row.querySelector(".actions");
-    const lockTitle = locked ? tr("tools.needs_admin") : "";
+    const shield = uac ? " 🛡" : "";
+    const uacTitle = uac ? tr("tools.uac") : "";
     if (!tool.installed) {
-      actions.appendChild(button(tr("btn.install"), "btn primary", () => installTool(tool), locked, lockTitle));
+      actions.appendChild(button(tr("btn.install") + shield, "btn primary", () => installTool(tool), false, uacTitle));
     } else if (tool.can_remove) {
-      actions.appendChild(button(tr("btn.remove"), "btn danger", () => removeTool(tool), locked, lockTitle));
+      actions.appendChild(button(tr("btn.remove") + shield, "btn danger", () => removeTool(tool), false, uacTitle));
     }
     list.appendChild(row);
   }
@@ -288,7 +289,7 @@ async function loadWsl() {
       <div class="inline"></div></div>`;
     body.querySelector(".inline").appendChild(button(tr("wsl.install_btn"), "btn primary", async () => {
       await guard(async () => { await call("wsl_install"); flash(tr("wsl.install_started"), "info"); });
-    }, !state.admin, state.admin ? "" : tr("tools.needs_admin")));
+    }));
     return;
   }
 
@@ -570,9 +571,11 @@ function renderBanners() {
   $("#banners").querySelectorAll(".sticky").forEach((b) => b.remove());
   if (state.windows && !state.admin) {
     const b = document.createElement("div");
-    b.className = "banner warn sticky";
-    b.innerHTML = `<span class="grow">${tr("banner.not_admin")}</span>`;
-    b.appendChild(button(tr("banner.restart_admin"), "btn", () => guard(() => call("restart_as_admin"))));
+    const standard = state.account === "standard";
+    b.className = "banner info sticky";
+    b.innerHTML = `<span class="grow">${tr(standard ? "banner.standard" : "banner.not_admin")}</span>`;
+    // On a standard account, elevating the window would switch Windows users — don't offer it
+    if (!standard) b.appendChild(button(tr("banner.restart_admin"), "btn", () => guard(() => call("restart_as_admin"))));
     $("#banners").appendChild(b);
   }
   if (state.update) {
