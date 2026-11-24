@@ -11,6 +11,7 @@ from dataclasses import dataclass, field
 
 from . import myconfig, pgconfig
 from .jobs import Job, Step, run_cmd
+from .i18n import t
 from .winenv import IS_WINDOWS, NO_WINDOW, refresh_path
 
 HOME = os.path.expanduser("~")
@@ -133,8 +134,8 @@ def status(tool: Tool, pkgs: dict[str, str]) -> dict:
     return {
         "id": tool.id,
         "name": tool.name,
-        "description": tool.description,
-        "note": tool.note,
+        "description": t(f"tool.{tool.id}.desc"),
+        "note": t(f"tool.{tool.id}.note") if tool.note else "",
         "installed": installed,
         "version": version,
         "path": exe or "",
@@ -163,10 +164,10 @@ def _sql_str(v: str) -> str:
 def _check_choco_password(pw: str) -> None:
     # choco splits package params on '/' and spaces; quotes break its parser
     if not pw:
-        raise ValueError("A password is required.")
+        raise ValueError(t("err.password_required"))
     bad = set(pw) & set("/ '\"")
     if bad:
-        raise ValueError("For the installer, the password can't contain spaces, / or quotes.")
+        raise ValueError(t("err.choco_password"))
 
 
 def _ps(script: str, display: str) -> Step:
@@ -176,7 +177,7 @@ def _ps(script: str, display: str) -> Step:
 def _ensure_choco(job: Job) -> bool:
     if choco_exe():
         return True
-    job.log("Chocolatey isn't installed — installing it first.")
+    job.log(t("log.choco_installing"))
     ok = run_cmd(job, Step(
         ["powershell", "-NoProfile", "-InputFormat", "None", "-ExecutionPolicy", "Bypass", "-Command",
          "[System.Net.ServicePointManager]::SecurityProtocol = 3072; "
@@ -185,7 +186,7 @@ def _ensure_choco(job: Job) -> bool:
     refresh_path()
     if ok and choco_exe():
         return True
-    job.log("[error] Chocolatey could not be installed.")
+    job.log(t("log.choco_failed"))
     return False
 
 
@@ -213,7 +214,7 @@ def install_steps(tool: Tool, password: str = "") -> list[Step]:
         ]
     if tool.id == "mysql":
         if not password:
-            raise ValueError("A password is required.")
+            raise ValueError(t("err.password_required"))
         myconfig._quote(password)   # validates
         return [
             Step(call=_ensure_choco),
@@ -230,12 +231,12 @@ def remove_steps(tool: Tool) -> list[Step]:
         return [_ps(
             "Remove-Item -Path \"$env:USERPROFILE\\.local\\bin\\claude.exe\" -Force -ErrorAction SilentlyContinue; "
             "Remove-Item -Path \"$env:USERPROFILE\\.local\\share\\claude\" -Recurse -Force -ErrorAction SilentlyContinue",
-            "Remove claude.exe and %USERPROFILE%\\.local\\share\\claude (settings in ~/.claude are kept)")]
+            t("log.claude_remove"))]
     if tool.id == "codex":
         return [Step(call=_require_npm), Step(call=lambda job: _npm(job, "uninstall", "@openai/codex"))]
     pkgs = [p for p in choco_packages() if tool.choco_match and re.fullmatch(tool.choco_match, p)]
     if not pkgs:
-        raise ValueError(f"{tool.name} wasn't installed with Chocolatey, so it can't be removed here.")
+        raise ValueError(t("err.not_choco", name=tool.name))
     # remove the meta package (e.g. 'postgresql') before its versioned dependency
     pkgs.sort(key=lambda p: (p != tool.choco, p))
     return [_choco("uninstall", *pkgs, "-y", "--no-progress")]
@@ -251,7 +252,7 @@ def _npm_exe() -> str | None:
 def _require_npm(job: Job) -> bool:
     if _npm_exe():
         return True
-    job.log("[error] npm not found — install Node.js first.")
+    job.log(t("log.npm_missing"))
     return False
 
 
@@ -265,15 +266,15 @@ def _npm(job: Job, action: str, pkg: str) -> bool:
 def _pg_post(job: Job, password: str) -> bool:
     refresh_path()
     if not pgconfig.find_psql():
-        job.log("[warn] psql not found after install — a reboot or new session may be needed.")
+        job.log(t("log.psql_missing"))
         return True
     existing = {s["name"] for s in pgconfig.list_services()}
     if "root" in existing:
-        job.log("psql service 'root' already exists — leaving it alone.")
+        job.log(t("log.pg_root_exists"))
     else:
         pgconfig.save_service({"name": "root", "host": "localhost", "port": "5432",
                                "dbname": "postgres", "user": "postgres", "password": password})
-        job.log(f"Created psql service 'root' in {pgconfig.service_file()}")
+        job.log(t("log.pg_root_created", path=pgconfig.service_file()))
     return True
 
 
@@ -281,7 +282,7 @@ def _mysql_post(job: Job, password: str) -> bool:
     refresh_path()
     mysql = myconfig.find_mysql()
     if not mysql:
-        job.log("[error] mysql not found after install.")
+        job.log(t("log.mysql_missing"))
         return False
     job.log("> mysql -u root --skip-password -e \"ALTER USER 'root'@'localhost' IDENTIFIED BY '********'\"")
     r = subprocess.run(
@@ -291,12 +292,11 @@ def _mysql_post(job: Job, password: str) -> bool:
     )
     if r.returncode != 0:
         job.log((r.stdout + r.stderr).strip())
-        job.log("[warn] Couldn't set the root password (it may already have one). "
-                "Saving the login anyway — edit it on the MySQL tab if it's wrong.")
+        job.log(t("log.mysql_pw_failed"))
     existing = {l["name"] for l in myconfig.list_logins()}
     if "root" in existing:
-        job.log("MySQL login 'root' already exists — leaving it alone.")
+        job.log(t("log.my_root_exists"))
     else:
         myconfig.save_login({"name": "root", "host": "localhost", "user": "root", "password": password})
-        job.log(f"Created MySQL login 'root' in {myconfig.option_file()}")
+        job.log(t("log.my_root_created", path=myconfig.option_file()))
     return True

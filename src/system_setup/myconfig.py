@@ -13,6 +13,7 @@ import re
 import shutil
 import subprocess
 
+from .i18n import t
 from .inifile import IniFile
 from .winenv import NO_WINDOW
 
@@ -35,7 +36,7 @@ def _quote(v: str) -> str:
         return f'"{v}"'
     if "'" not in v:
         return f"'{v}'"
-    raise ValueError("Password can't contain both ' and \" characters")
+    raise ValueError(t("err.my_quotes"))
 
 
 def _unquote(v: str) -> str:
@@ -65,10 +66,10 @@ def list_logins() -> list[dict]:
 def save_login(data: dict, old_name: str | None = None) -> None:
     name = (data.get("name") or "").strip()
     if any(c in name for c in "[]= \n"):
-        raise ValueError("Name can't contain spaces or [ ] =")
+        raise ValueError(t("err.my_name"))
     vals = {k: (data.get(k) or "").strip() for k in LOGIN_KEYS}
     if not vals["user"]:
-        raise ValueError("User is required")
+        raise ValueError(t("err.user_required"))
     if data.get("password") is not None:
         vals["password"] = _quote(data["password"]) if data["password"] else ""
     ini = IniFile(option_file())
@@ -108,7 +109,7 @@ def client_args(suffix: str) -> list[str]:
 def test_login(name: str) -> tuple[bool, str]:
     mysql = find_mysql()
     if not mysql:
-        return False, "mysql not found — install MySQL first."
+        return False, t("err.mysql_missing")
     try:
         r = subprocess.run(
             [mysql, *client_args(name), "--connect-timeout=5", "-N", "-e", "select version()"],
@@ -116,5 +117,5 @@ def test_login(name: str) -> tuple[bool, str]:
             stdin=subprocess.DEVNULL, creationflags=NO_WINDOW,
         )
     except subprocess.TimeoutExpired:
-        return False, "Timed out."
+        return False, t("err.timeout")
     return r.returncode == 0, (r.stdout + r.stderr).strip()

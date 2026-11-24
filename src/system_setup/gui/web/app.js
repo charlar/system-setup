@@ -1,4 +1,5 @@
 "use strict";
+// All visible text goes through tr() from i18n.js.
 
 // ---------------------------------------------------------------------------
 // Basics
@@ -10,7 +11,7 @@ const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => (
 
 let api = null;
 let state = { admin: false, update: null };
-const loaded = {};
+let loaded = {};
 
 window.addEventListener("error", (e) => api && api.js_error(`${e.message} @ ${e.filename}:${e.lineno}`));
 window.addEventListener("unhandledrejection", (e) => api && api.js_error(String(e.reason && e.reason.stack || e.reason)));
@@ -24,7 +25,7 @@ async function call(method, ...args) {
 function flash(message, kind = "warn") {
   const div = document.createElement("div");
   div.className = `banner ${kind}`;
-  div.innerHTML = `<span class="grow">${esc(message)}</span><button class="btn small">Dismiss</button>`;
+  div.innerHTML = `<span class="grow">${esc(message)}</span><button class="btn small">${tr("btn.dismiss")}</button>`;
   div.querySelector("button").onclick = () => div.remove();
   $("#banners").prepend(div);
 }
@@ -33,17 +34,50 @@ async function guard(fn) {
   try { return await fn(); } catch (e) { flash(e.message, "warn"); }
 }
 
+const empty = (html) => `<div class="empty">${html}</div>`;
+
+function button(label, cls, onclick, locked = false, title = "") {
+  const b = document.createElement("button");
+  b.className = cls;
+  b.textContent = label;
+  b.dataset.job = "1";            // disabled while an install is running
+  b.dataset.locked = locked ? "1" : "0";
+  b.disabled = locked;
+  if (title) b.title = title;
+  b.onclick = onclick;
+  return b;
+}
+
+// ---------------------------------------------------------------------------
+// Language
+// ---------------------------------------------------------------------------
+
+function renderLangSwitch() {
+  document.querySelectorAll(".lang-switch button").forEach((b) => b.classList.toggle("active", b.dataset.lang === LANG));
+}
+
+async function switchLanguage(lang) {
+  if (lang === LANG) return;
+  await guard(async () => {
+    await call("set_language", lang);
+    LANG = lang;
+    applyStaticText();
+    renderLangSwitch();
+    renderMeta();
+    renderBanners();
+    // re-render tabs (tool descriptions etc. come from Python in the new language)
+    loaded = {};
+    showTab(currentTab);
+  });
+}
+
+document.querySelectorAll(".lang-switch button").forEach((b) => (b.onclick = () => switchLanguage(b.dataset.lang)));
+
 // ---------------------------------------------------------------------------
 // Tabs
 // ---------------------------------------------------------------------------
 
-const loaders = {
-  tools: loadTools,
-  wsl: loadWsl,
-  pg: loadPg,
-  mysql: loadMy,
-  files: loadFiles,
-};
+const loaders = { tools: loadTools, wsl: loadWsl, pg: loadPg, mysql: loadMy, files: loadFiles };
 let currentTab = "tools";
 
 function showTab(name) {
@@ -59,16 +93,17 @@ document.querySelectorAll(".nav").forEach((b) => (b.onclick = () => showTab(b.da
 // Modal
 // ---------------------------------------------------------------------------
 
-function openModal({ title, fields, okText = "Save", onSubmit, intro = "" }) {
+function openModal({ title, fields, okText, onSubmit, intro = "" }) {
   $("#modal-title").textContent = title;
-  $("#modal-ok").textContent = okText;
+  $("#modal-ok").textContent = okText || tr("btn.save");
   $("#modal-error").textContent = "";
   const body = $("#modal-body");
   body.innerHTML = intro ? `<p class="sub" style="margin-bottom:12px">${intro}</p>` : "";
   const groups = [];
   for (const f of fields) {
-    if (f.row) { (groups.at(-1)?.row === f.row ? groups.at(-1).items : (groups.push({ row: f.row, items: [] }), groups.at(-1).items)).push(f); }
-    else groups.push({ items: [f] });
+    const last = groups[groups.length - 1];
+    if (f.row && last && last.row === f.row) last.items.push(f);
+    else groups.push({ row: f.row, items: [f] });
   }
   for (const g of groups) {
     const wrap = document.createElement("div");
@@ -82,13 +117,13 @@ function openModal({ title, fields, okText = "Save", onSubmit, intro = "" }) {
         div.innerHTML = `<label>${esc(f.label)}</label>
           <div style="display:flex;gap:6px"><input type="${f.type || "text"}" name="${f.name}" value="${esc(f.value)}"
             placeholder="${esc(f.placeholder || "")}" ${f.required ? "required" : ""} spellcheck="false">
-          ${f.type === "password" ? '<button type="button" class="btn small reveal">Show</button>' : ""}</div>
+          ${f.type === "password" ? `<button type="button" class="btn small reveal">${tr("btn.show")}</button>` : ""}</div>
           ${f.hint ? `<div class="hint">${f.hint}</div>` : ""}`;
         const rv = div.querySelector(".reveal");
         if (rv) rv.onclick = () => {
           const inp = div.querySelector("input");
           inp.type = inp.type === "password" ? "text" : "password";
-          rv.textContent = inp.type === "password" ? "Show" : "Hide";
+          rv.textContent = inp.type === "password" ? tr("btn.show") : tr("btn.hide");
         };
       }
       wrap.appendChild(div);
@@ -125,13 +160,10 @@ function openModal({ title, fields, okText = "Save", onSubmit, intro = "" }) {
 // Jobs (install/remove output)
 // ---------------------------------------------------------------------------
 
-let jobRefresh = null;
-
 async function runJob(promise, refresh) {
   let res;
   try { res = await promise; } catch (e) { flash(e.message); return; }
   const id = res.job;
-  jobRefresh = refresh;
   const log = $("#job-log");
   log.textContent = "";
   $("#drawer").classList.remove("hidden");
@@ -152,8 +184,8 @@ async function runJob(promise, refresh) {
     if (d.state === "running") { setTimeout(tick, 400); return; }
     $("#job-dot").className = `dot ${d.state}`;
     setBusy(false);
-    if (d.reboot) flash("Restart Windows to finish that install.", "info");
-    if (jobRefresh) jobRefresh();
+    if (d.reboot) flash(tr("banner.reboot"), "info");
+    if (refresh) refresh();
   };
   tick();
 }
@@ -168,7 +200,8 @@ $("#job-copy").onclick = () => {
   const ta = document.createElement("textarea");
   ta.value = $("#job-log").textContent;
   document.body.appendChild(ta); ta.select(); document.execCommand("copy"); ta.remove();
-  $("#job-copy").textContent = "Copied"; setTimeout(() => ($("#job-copy").textContent = "Copy log"), 1200);
+  $("#job-copy").textContent = tr("btn.copied");
+  setTimeout(() => ($("#job-copy").textContent = tr("btn.copy_log")), 1200);
 };
 
 // ---------------------------------------------------------------------------
@@ -177,75 +210,61 @@ $("#job-copy").onclick = () => {
 
 async function loadTools() {
   const list = $("#tools-list");
-  list.innerHTML = `<div class="empty">Checking what's installed…</div>`;
+  list.innerHTML = empty(tr("tools.checking"));
   let tools;
-  try { tools = (await call("get_tools")).data; } catch (e) { list.innerHTML = `<div class="empty">${esc(e.message)}</div>`; return; }
+  try { tools = (await call("get_tools")).data; } catch (e) { list.innerHTML = empty(esc(e.message)); return; }
   list.innerHTML = "";
-  for (const t of tools) {
+  for (const tool of tools) {
     const row = document.createElement("div");
     row.className = "row";
-    const pill = t.installed
-      ? `<span class="pill ok">Installed${t.source === "other" ? " (not via choco)" : ""}</span>`
-      : `<span class="pill no">Not installed</span>`;
-    const locked = t.needs_admin && !state.admin;
+    const pill = tool.installed
+      ? `<span class="pill ok">${tr("tools.installed")}${tool.source === "other" ? tr("tools.not_choco") : ""}</span>`
+      : `<span class="pill no">${tr("tools.not_installed")}</span>`;
+    const locked = tool.needs_admin && !state.admin;
     row.innerHTML = `
       <div class="main">
-        <div class="title">${esc(t.name)} ${pill}</div>
-        <div class="desc">${esc(t.description)}</div>
-        ${t.installed ? `<div class="detail" title="${esc(t.path)}">${esc(t.version)}${t.path ? " — " + esc(t.path) : ""}</div>` : ""}
+        <div class="title">${esc(tool.name)} ${pill}</div>
+        <div class="desc">${esc(tool.description)}</div>
+        ${tool.installed ? `<div class="detail" title="${esc(tool.path)}">${esc(tool.version)}${tool.path ? " — " + esc(tool.path) : ""}</div>` : ""}
       </div>
       <div class="actions"></div>`;
     const actions = row.querySelector(".actions");
-    const lockTitle = locked ? "Needs administrator rights" : "";
-    if (!t.installed) {
-      const b = button("Install", "btn primary", () => installTool(t), locked, lockTitle);
-      actions.appendChild(b);
-    } else if (t.can_remove) {
-      actions.appendChild(button("Remove", "btn danger", () => removeTool(t), locked, lockTitle));
+    const lockTitle = locked ? tr("tools.needs_admin") : "";
+    if (!tool.installed) {
+      actions.appendChild(button(tr("btn.install"), "btn primary", () => installTool(tool), locked, lockTitle));
+    } else if (tool.can_remove) {
+      actions.appendChild(button(tr("btn.remove"), "btn danger", () => removeTool(tool), locked, lockTitle));
     }
     list.appendChild(row);
   }
   setBusy(document.body.classList.contains("busy"));
 }
 
-function button(label, cls, onclick, locked = false, title = "") {
-  const b = document.createElement("button");
-  b.className = cls;
-  b.textContent = label;
-  b.dataset.job = "1";
-  b.dataset.locked = locked ? "1" : "0";
-  b.disabled = locked;
-  if (title) b.title = title;
-  b.onclick = onclick;
-  return b;
-}
-
-async function installTool(t) {
-  if (t.needs_password) {
-    const pw = await openModal({
-      title: `Install ${t.name}`,
-      okText: "Install",
-      intro: esc(t.note),
+async function installTool(tool) {
+  let pw = "";
+  if (tool.needs_password) {
+    pw = await openModal({
+      title: tr("tools.install_title", { name: tool.name }),
+      okText: tr("btn.install"),
+      intro: esc(tool.note),
       fields: [
-        { name: "password", label: t.id === "mysql" ? "Root password" : "Password for the 'postgres' user", type: "password", required: true,
-          hint: "Saved to your config so psql/mysql connect without asking. No spaces, / or quotes." },
-        { name: "confirm", label: "Confirm password", type: "password", required: true },
+        { name: "password", label: tool.id === "mysql" ? tr("tools.pw_mysql") : tr("tools.pw_pg"),
+          type: "password", required: true, hint: tr("tools.pw_hint") },
+        { name: "confirm", label: tr("tools.pw_confirm"), type: "password", required: true },
       ],
       onSubmit: async (v) => {
-        if (v.password !== v.confirm) throw new Error("Passwords don't match.");
+        if (v.password !== v.confirm) throw new Error(tr("tools.pw_mismatch"));
         return v.password;
       },
     });
     if (!pw) return;
-    runJob(call("install_tool", t.id, pw), loadTools);
-  } else {
-    runJob(call("install_tool", t.id, ""), loadTools);
   }
+  runJob(call("install_tool", tool.id, pw), loadTools);
 }
 
-function removeTool(t) {
-  if (!confirm(`Remove ${t.name}?`)) return;
-  runJob(call("remove_tool", t.id), loadTools);
+function removeTool(tool) {
+  if (!confirm(tr("tools.remove_confirm", { name: tool.name }))) return;
+  runJob(call("remove_tool", tool.id), loadTools);
 }
 
 $("#tools-refresh").onclick = loadTools;
@@ -258,18 +277,18 @@ let wslDistro = null;
 
 async function loadWsl() {
   const body = $("#wsl-body");
-  body.innerHTML = `<div class="empty">Checking WSL…</div>`;
+  body.innerHTML = empty(tr("wsl.checking"));
   let info;
-  try { info = (await call("wsl_distros")).data; } catch (e) { body.innerHTML = `<div class="empty">${esc(e.message)}</div>`; return; }
+  try { info = (await call("wsl_distros")).data; } catch (e) { body.innerHTML = empty(esc(e.message)); return; }
 
   if (!info.installed || !info.distros.length) {
-    body.innerHTML = `<div class="card"><h3>WSL isn't set up</h3>
+    body.innerHTML = `<div class="card"><h3>${tr("wsl.not_setup")}</h3>
       <p class="sub">${esc(info.message)}</p>
-      <p class="sub">Installing opens a console window. Windows usually needs a restart afterwards, then Ubuntu asks you to create a Linux username and password.</p>
+      <p class="sub">${tr("wsl.install_help")}</p>
       <div class="inline"></div></div>`;
-    body.querySelector(".inline").appendChild(button("Install WSL + Ubuntu", "btn primary", async () => {
-      await guard(async () => { await call("wsl_install"); flash("WSL install started in a separate window. Restart Windows when it finishes.", "info"); });
-    }, !state.admin, state.admin ? "" : "Needs administrator rights"));
+    body.querySelector(".inline").appendChild(button(tr("wsl.install_btn"), "btn primary", async () => {
+      await guard(async () => { await call("wsl_install"); flash(tr("wsl.install_started"), "info"); });
+    }, !state.admin, state.admin ? "" : tr("tools.needs_admin")));
     return;
   }
 
@@ -278,11 +297,11 @@ async function loadWsl() {
   }
   body.innerHTML = `
     <div class="inline" style="margin:0 0 14px">
-      <label class="sub">Distro</label>
+      <label class="sub">${tr("wsl.distro")}</label>
       <select id="distro">${info.distros.map((d) =>
-        `<option ${d.name === wslDistro ? "selected" : ""} value="${esc(d.name)}">${esc(d.name)}${d.default ? " (default)" : ""} — WSL${esc(d.version)}, ${esc(d.state)}</option>`).join("")}</select>
+        `<option ${d.name === wslDistro ? "selected" : ""} value="${esc(d.name)}">${esc(d.name)}${d.default ? tr("wsl.default") : ""} — WSL${esc(d.version)}</option>`).join("")}</select>
     </div>
-    <div id="distro-body"><div class="empty">Starting ${esc(wslDistro)} and checking Docker…</div></div>`;
+    <div id="distro-body">${empty(tr("wsl.starting", { name: esc(wslDistro) }))}</div>`;
   $("#distro").onchange = (e) => { wslDistro = e.target.value; loadWsl(); };
   return loadDistro(wslDistro);
 }
@@ -290,57 +309,57 @@ async function loadWsl() {
 async function loadDistro(name) {
   const box = $("#distro-body");
   let d;
-  try { d = (await call("wsl_info", name)).data; } catch (e) { box.innerHTML = `<div class="empty">${esc(e.message)}</div>`; return; }
-  if (!d.ok) { box.innerHTML = `<div class="empty">Couldn't start ${esc(name)}: ${esc(d.error)}</div>`; return; }
+  try { d = (await call("wsl_info", name)).data; } catch (e) { box.innerHTML = empty(esc(e.message)); return; }
+  if (!d.ok) { box.innerHTML = empty(tr("wsl.start_failed", { name: esc(name), error: esc(d.error) })); return; }
 
   let pill;
-  if (d.desktop === "yes") pill = `<span class="pill warn">Docker Desktop integration</span>`;
-  else if (d.docker && d.active === "active") pill = `<span class="pill ok">Running</span>`;
-  else if (d.docker) pill = `<span class="pill warn">Installed, not running</span>`;
-  else pill = `<span class="pill no">Not installed</span>`;
+  if (d.desktop === "yes") pill = `<span class="pill warn">${tr("docker.desktop")}</span>`;
+  else if (d.docker && d.active === "active") pill = `<span class="pill ok">${tr("docker.running")}</span>`;
+  else if (d.docker) pill = `<span class="pill warn">${tr("docker.stopped")}</span>`;
+  else pill = `<span class="pill no">${tr("docker.none")}</span>`;
 
   box.innerHTML = `
     <div class="card">
       <h3>Docker Engine ${pill}</h3>
       <div class="kv">
-        <span>System</span><span>${esc(d.os)}</span>
-        <span>Linux user</span><span>${esc(d.user)}</span>
-        <span>systemd</span><span>${d.systemd === "yes" ? "enabled" : "off (will be enabled — needed for Docker)"}</span>
+        <span>${tr("docker.system")}</span><span>${esc(d.os)}</span>
+        <span>${tr("docker.user")}</span><span>${esc(d.user)}</span>
+        <span>systemd</span><span>${d.systemd === "yes" ? tr("docker.systemd_on") : tr("docker.systemd_off")}</span>
         <span>Docker</span><span>${esc(d.docker || "—")}</span>
-        <span>Package</span><span>${esc(d.pkg || "—")}</span>
+        <span>${tr("docker.package")}</span><span>${esc(d.pkg || "—")}</span>
         <span>Compose</span><span>${esc(d.compose || "—")}</span>
-        <span>Docker without sudo</span><span>${d.ingroup === "yes" ? "yes" : "no — install adds you to the docker group"}</span>
+        <span>${tr("docker.nosudo")}</span><span>${d.ingroup === "yes" ? tr("docker.yes") : tr("docker.nosudo_no")}</span>
       </div>
-      ${d.desktop === "yes" ? `<p class="sub">This distro is using Docker Desktop's integration. Turn that off in Docker Desktop before installing Docker Engine here.</p>` : ""}
-      <div class="inline" id="docker-actions"></div>
+      ${d.desktop === "yes" ? `<p class="sub">${tr("docker.desktop_note")}</p>` : ""}
+      <div class="inline" id="docker-actions" style="flex-wrap:wrap"></div>
     </div>
     <div class="card">
-      <h3>apt packages</h3>
-      <p class="sub">Install or remove Linux packages in ${esc(name)} (space separated), e.g. <code>build-essential postgresql-client</code>.</p>
+      <h3>${tr("apt.title")}</h3>
+      <p class="sub">${tr("apt.sub", { name: esc(name) })}</p>
       <div class="inline">
-        <input type="text" id="apt-pkgs" placeholder="package names" spellcheck="false">
+        <input type="text" id="apt-pkgs" placeholder="${esc(tr("apt.placeholder"))}" spellcheck="false">
         <span id="apt-actions" style="display:flex;gap:6px"></span>
       </div>
     </div>`;
 
   const da = $("#docker-actions");
   if (!d.docker || d.active !== "active") {
-    da.appendChild(button(d.docker ? "Repair / reinstall Docker" : "Install Docker Engine", "btn primary", () => {
-      if (d.systemd !== "yes" && !confirm(`This will enable systemd and restart ${name}. Open terminals for ${name} will close. Continue?`)) return;
+    da.appendChild(button(d.docker ? tr("docker.repair") : tr("docker.install"), "btn primary", () => {
+      if (d.systemd !== "yes" && !confirm(tr("docker.systemd_confirm", { name }))) return;
       runJob(call("docker_install", name), () => loadDistro(name));
     }, d.desktop === "yes"));
   }
   if (d.docker && d.active === "active" && (d.pkg || "").startsWith("docker.io")) {
-    da.appendChild(button("Switch to Docker's official packages (adds Compose)", "btn", () => {
-      if (!confirm(`Replace Ubuntu's docker.io with Docker's official docker-ce packages in ${name}? Images and volumes are kept.`)) return;
+    da.appendChild(button(tr("docker.switch"), "btn", () => {
+      if (!confirm(tr("docker.switch_confirm", { name }))) return;
       runJob(call("docker_install", name), () => loadDistro(name));
     }));
   }
   if (d.docker && d.desktop !== "yes") {
-    da.appendChild(button("Remove Docker", "btn danger", async () => {
+    da.appendChild(button(tr("docker.remove"), "btn danger", async () => {
       const v = await openModal({
-        title: `Remove Docker from ${name}`, okText: "Remove",
-        fields: [{ name: "purge", label: "Also delete all images, containers and volumes", type: "checkbox", value: false }],
+        title: tr("docker.remove_title", { name }), okText: tr("btn.remove"),
+        fields: [{ name: "purge", label: tr("docker.purge"), type: "checkbox", value: false }],
         onSubmit: async (v) => v,
       });
       if (v) runJob(call("docker_remove", name, v.purge), () => loadDistro(name));
@@ -349,10 +368,10 @@ async function loadDistro(name) {
 
   const aa = $("#apt-actions");
   for (const action of ["install", "remove"]) {
-    aa.appendChild(button(action === "install" ? "Install" : "Remove", action === "install" ? "btn" : "btn danger", () => {
+    aa.appendChild(button(tr(`btn.${action}`), action === "install" ? "btn" : "btn danger", () => {
       const pkgs = $("#apt-pkgs").value.trim();
       if (!pkgs) return;
-      if (action === "remove" && !confirm(`Remove ${pkgs} from ${name}?`)) return;
+      if (action === "remove" && !confirm(tr("apt.remove_confirm", { pkgs, name }))) return;
       runJob(call("apt", name, action, pkgs), null);
     }));
   }
@@ -366,9 +385,8 @@ $("#wsl-refresh").onclick = loadWsl;
 // ---------------------------------------------------------------------------
 
 function secretSpan(pw, has) {
-  if (!has) return `<span class="pill warn">no password saved</span>`;
-  const span = `<span class="secret" data-pw="${esc(pw)}" title="Click to show">••••••••</span>`;
-  return span;
+  if (!has) return `<span class="pill warn">${tr("conn.no_password")}</span>`;
+  return `<span class="secret" data-pw="${esc(pw)}" title="${esc(tr("conn.click_show"))}">••••••••</span>`;
 }
 
 function wireSecrets(root) {
@@ -379,54 +397,69 @@ function wireSecrets(root) {
   }));
 }
 
+function plainButton(label, cls, onclick) {
+  const b = document.createElement("button");
+  b.className = cls;
+  b.textContent = label;
+  b.onclick = onclick;
+  return b;
+}
+
 function connList({ listEl, filesEl, items, files, missingTool, describe, usage, onTest, onEdit, onDelete, emptyText }) {
   listEl.innerHTML = "";
-  filesEl.innerHTML = files.map((f) => `<div>File: <code>${esc(f)}</code></div>`).join("") +
+  filesEl.innerHTML = files.map((f) => `<div>${tr("conn.file")} <code>${esc(f)}</code></div>`).join("") +
     (missingTool ? `<div style="color:var(--warn)">${esc(missingTool)}</div>` : "");
-  if (!items.length) { listEl.innerHTML = `<div class="empty">${emptyText}</div>`; return; }
+  if (!items.length) { listEl.innerHTML = empty(emptyText); return; }
   for (const it of items) {
     const row = document.createElement("div");
     row.className = "row";
     row.innerHTML = `
       <div class="main">
-        <div class="title">${esc(it.name || "(default)")} ${secretSpan(it.password, it.has_password)}</div>
+        <div class="title">${esc(it.name || tr("conn.default"))} ${secretSpan(it.password, it.has_password)}</div>
         <div class="desc">${esc(describe(it))}</div>
         <div class="detail"><code>${esc(usage(it))}</code></div>
         <div class="test-out hidden"></div>
       </div>
       <div class="actions"></div>`;
-    const actions = row.querySelector(".actions");
     const out = row.querySelector(".test-out");
-    const test = button("Test", "btn", async () => {
-      out.className = "test-out"; out.textContent = "Connecting…";
+    const test = plainButton(tr("btn.test"), "btn", async () => {
+      out.className = "test-out"; out.textContent = tr("conn.connecting");
       try {
         const r = await onTest(it);
         out.className = `test-out ${r.success ? "ok" : "bad"}`;
-        out.textContent = (r.success ? "✓ " : "✗ ") + (r.output || (r.success ? "Connected" : "Failed"));
+        out.textContent = (r.success ? "✓ " : "✗ ") + (r.output || (r.success ? tr("conn.connected") : tr("conn.failed")));
       } catch (e) { out.className = "test-out bad"; out.textContent = e.message; }
     });
-    actions.append(test, button("Edit", "btn", () => onEdit(it)), button("Delete", "btn danger", () => onDelete(it)));
-    actions.querySelectorAll("button").forEach((b) => { delete b.dataset.job; b.disabled = false; });
+    row.querySelector(".actions").append(
+      test,
+      plainButton(tr("btn.edit"), "btn", () => onEdit(it)),
+      plainButton(tr("btn.delete"), "btn danger", () => onDelete(it)),
+    );
     listEl.appendChild(row);
   }
   wireSecrets(listEl);
+}
+
+function pwPlaceholder(isNew, item) {
+  if (isNew) return "";
+  return item.has_password ? tr("conn.keep_pw") : tr("conn.none_saved");
 }
 
 // ---- PostgreSQL ------------------------------------------------------------
 
 async function loadPg() {
   let r;
-  try { r = await call("pg_list"); } catch (e) { $("#pg-list").innerHTML = `<div class="empty">${esc(e.message)}</div>`; return; }
+  try { r = await call("pg_list"); } catch (e) { $("#pg-list").innerHTML = empty(esc(e.message)); return; }
   connList({
     listEl: $("#pg-list"), filesEl: $("#pg-files"), items: r.data, files: r.files,
-    missingTool: r.psql ? "" : "psql isn't installed, so Test won't work until PostgreSQL is installed.",
-    emptyText: "No services yet. Add one to connect with <code>psql service=name</code>.",
+    missingTool: r.psql ? "" : tr("pg.missing"),
+    emptyText: tr("pg.empty"),
     describe: (s) => `${s.user || "?"} @ ${s.host || "localhost"}:${s.port || "5432"} / ${s.dbname || s.user}`,
     usage: (s) => `psql service=${s.name}`,
-    onTest: async (s) => (await call("pg_test", s.name)),
+    onTest: (s) => call("pg_test", s.name),
     onEdit: (s) => editPg(s),
     onDelete: async (s) => {
-      if (!confirm(`Delete service '${s.name}'? Its saved password is removed too unless another service uses it.`)) return;
+      if (!confirm(tr("pg.delete_confirm", { name: s.name }))) return;
       await guard(async () => { await call("pg_delete", s.name); loadPg(); });
     },
   });
@@ -436,16 +469,15 @@ async function editPg(s) {
   const isNew = !s;
   s = s || { name: "", host: "localhost", port: "5432", dbname: "postgres", user: "postgres" };
   const ok = await openModal({
-    title: isNew ? "Add PostgreSQL service" : `Edit service '${s.name}'`,
+    title: isNew ? tr("pg.add_title") : tr("pg.edit_title", { name: s.name }),
     fields: [
-      { name: "name", label: "Service name", value: s.name, required: true, hint: "Used as psql service=<i>name</i>" },
-      { name: "host", label: "Host", value: s.host, row: "a" },
-      { name: "port", label: "Port", value: s.port, row: "a" },
-      { name: "dbname", label: "Database", value: s.dbname, row: "b" },
-      { name: "user", label: "User", value: s.user, required: true, row: "b" },
-      { name: "password", label: "Password", type: "password", value: "",
-        placeholder: isNew ? "" : (s.has_password ? "leave blank to keep the saved password" : "none saved"),
-        hint: "Stored in pgpass so psql never prompts." },
+      { name: "name", label: tr("pg.name"), value: s.name, required: true, hint: tr("pg.name_hint") },
+      { name: "host", label: tr("conn.host"), value: s.host, row: "a" },
+      { name: "port", label: tr("conn.port"), value: s.port, row: "a" },
+      { name: "dbname", label: tr("pg.database"), value: s.dbname, row: "b" },
+      { name: "user", label: tr("conn.user"), value: s.user, required: true, row: "b" },
+      { name: "password", label: tr("conn.password"), type: "password", value: "",
+        placeholder: pwPlaceholder(isNew, s), hint: tr("pg.pw_hint") },
     ],
     onSubmit: async (v) => {
       const data = { ...v, password: v.password === "" ? null : v.password };
@@ -461,17 +493,17 @@ $("#pg-add").onclick = () => editPg(null);
 
 async function loadMy() {
   let r;
-  try { r = await call("my_list"); } catch (e) { $("#my-list").innerHTML = `<div class="empty">${esc(e.message)}</div>`; return; }
+  try { r = await call("my_list"); } catch (e) { $("#my-list").innerHTML = empty(esc(e.message)); return; }
   connList({
     listEl: $("#my-list"), filesEl: $("#my-files"), items: r.data, files: r.files,
-    missingTool: r.mysql ? "" : "mysql isn't installed, so Test won't work until MySQL is installed.",
-    emptyText: "No logins yet. Add one to connect with <code>mysql --defaults-group-suffix=name</code>.",
+    missingTool: r.mysql ? "" : tr("my.missing"),
+    emptyText: tr("my.empty"),
     describe: (l) => `${l.user || "?"} @ ${l.host || "localhost"}${l.port ? ":" + l.port : ""}${l.database ? " / " + l.database : ""}`,
-    usage: (l) => l.name ? `mysql --defaults-group-suffix=${l.name}` : "mysql   (default [client] login)",
-    onTest: async (l) => (await call("my_test", l.name)),
+    usage: (l) => l.name ? `mysql --defaults-group-suffix=${l.name}` : tr("my.default_usage"),
+    onTest: (l) => call("my_test", l.name),
     onEdit: (l) => editMy(l),
     onDelete: async (l) => {
-      if (!confirm(`Delete login '${l.name || "(default)"}'?`)) return;
+      if (!confirm(tr("my.delete_confirm", { name: l.name || tr("conn.default") }))) return;
       await guard(async () => { await call("my_delete", l.name); loadMy(); });
     },
   });
@@ -481,15 +513,14 @@ async function editMy(l) {
   const isNew = !l;
   l = l || { name: "", host: "localhost", port: "", user: "root", database: "" };
   const ok = await openModal({
-    title: isNew ? "Add MySQL login" : `Edit login '${l.name || "(default)"}'`,
+    title: isNew ? tr("my.add_title") : tr("my.edit_title", { name: l.name || tr("conn.default") }),
     fields: [
-      { name: "name", label: "Login name", value: l.name, hint: "Used as --defaults-group-suffix=<i>name</i>. Leave blank for the default login used by plain <code>mysql</code>." },
-      { name: "host", label: "Host", value: l.host, row: "a" },
-      { name: "port", label: "Port", value: l.port, placeholder: "3306", row: "a" },
-      { name: "user", label: "User", value: l.user, required: true, row: "b" },
-      { name: "database", label: "Database (optional)", value: l.database, row: "b" },
-      { name: "password", label: "Password", type: "password", value: "",
-        placeholder: isNew ? "" : (l.has_password ? "leave blank to keep the saved password" : "none saved") },
+      { name: "name", label: tr("my.name"), value: l.name, hint: tr("my.name_hint") },
+      { name: "host", label: tr("conn.host"), value: l.host, row: "a" },
+      { name: "port", label: tr("conn.port"), value: l.port, placeholder: "3306", row: "a" },
+      { name: "user", label: tr("conn.user"), value: l.user, required: true, row: "b" },
+      { name: "database", label: tr("my.database"), value: l.database, row: "b" },
+      { name: "password", label: tr("conn.password"), type: "password", value: "", placeholder: pwPlaceholder(isNew, l) },
     ],
     onSubmit: async (v) => {
       const data = { ...v, password: v.password === "" ? null : v.password };
@@ -508,26 +539,23 @@ $("#my-add").onclick = () => editMy(null);
 async function loadFiles() {
   const list = $("#files-list");
   let files;
-  try { files = (await call("get_files")).data; } catch (e) { list.innerHTML = `<div class="empty">${esc(e.message)}</div>`; return; }
+  try { files = (await call("get_files")).data; } catch (e) { list.innerHTML = empty(esc(e.message)); return; }
   list.innerHTML = "";
   for (const f of files) {
     const row = document.createElement("div");
     row.className = "row";
     row.innerHTML = `
       <div class="main">
-        <div class="title">${esc(f.label)} ${f.exists ? "" : '<span class="pill no">not created yet</span>'}</div>
+        <div class="title">${esc(f.label)} ${f.exists ? "" : `<span class="pill no">${tr("files.not_created")}</span>`}</div>
         <div class="detail" title="${esc(f.path)}"><code>${esc(f.path)}</code></div>
         ${f.hint ? `<div class="desc">${esc(f.hint)}</div>` : ""}
       </div>
       <div class="actions"></div>`;
-    const a = row.querySelector(".actions");
-    const edit = document.createElement("button");
-    edit.className = "btn"; edit.textContent = f.exists ? "Edit" : "Create";
-    edit.onclick = () => guard(async () => { await call("edit_file", f.path); if (!f.exists) loadFiles(); });
-    const show = document.createElement("button");
-    show.className = "btn"; show.textContent = "Show in folder";
-    show.onclick = () => guard(() => call("show_file", f.path));
-    a.append(edit, show);
+    row.querySelector(".actions").append(
+      plainButton(f.exists ? tr("btn.edit") : tr("btn.create"), "btn",
+        () => guard(async () => { await call("edit_file", f.path); if (!f.exists) loadFiles(); })),
+      plainButton(tr("btn.show_folder"), "btn", () => guard(() => call("show_file", f.path))),
+    );
     list.appendChild(row);
   }
 }
@@ -536,34 +564,43 @@ async function loadFiles() {
 // Banners: admin + update
 // ---------------------------------------------------------------------------
 
+let updating = false;
+
 function renderBanners() {
   $("#banners").querySelectorAll(".sticky").forEach((b) => b.remove());
   if (state.windows && !state.admin) {
     const b = document.createElement("div");
     b.className = "banner warn sticky";
-    b.innerHTML = `<span class="grow">Running without administrator rights — Chocolatey installs are disabled. Saved connections and WSL still work.</span>`;
-    b.appendChild(button("Restart as administrator", "btn", () => guard(() => call("restart_as_admin"))));
+    b.innerHTML = `<span class="grow">${tr("banner.not_admin")}</span>`;
+    b.appendChild(button(tr("banner.restart_admin"), "btn", () => guard(() => call("restart_as_admin"))));
     $("#banners").appendChild(b);
   }
   if (state.update) {
     const b = document.createElement("div");
     b.className = "banner info sticky";
-    b.innerHTML = `<span class="grow">A new version of System Setup is available.</span>`;
-    b.appendChild(button("Update and restart", "btn primary", async () => {
-      if (!confirm("Download the update and restart System Setup?")) return;
-      await guard(async () => {
-        await call("apply_update");
-        b.querySelector(".grow").textContent = "Updating… System Setup will reopen in a few seconds.";
-      });
-    }));
+    b.innerHTML = `<span class="grow">${updating ? tr("banner.updating") : tr("banner.update")}</span>`;
+    if (!updating) {
+      b.appendChild(button(tr("banner.update_btn"), "btn primary", async () => {
+        if (!confirm(tr("banner.update_confirm"))) return;
+        await guard(async () => {
+          await call("apply_update");
+          updating = true;
+          renderBanners();
+        });
+      }));
+    }
     $("#banners").appendChild(b);
   }
+}
+
+function renderMeta() {
+  $("#meta").innerHTML = `v${esc(state.version || "")}${state.admin ? " · " + tr("admin") : ""}`;
 }
 
 async function pollState() {
   try {
     state = (await call("get_state")).data;
-    $("#meta").innerHTML = `v${esc(state.version)}${state.admin ? " · admin" : ""}`;
+    renderMeta();
     renderBanners();
   } catch (e) { /* ignore */ }
   if (state.update === null) setTimeout(pollState, 2000);
@@ -576,6 +613,11 @@ async function pollState() {
 window.addEventListener("pywebviewready", async () => {
   api = window.pywebview.api;
   await pollState();
+  LANG = state.lang || "en";
+  applyStaticText();
+  renderLangSwitch();
+  renderMeta();
+  renderBanners();
   loaded.tools = true;
   await loadTools();
   if (state.selftest) {

@@ -67,7 +67,9 @@ Después de la configuración, ejecute `system-setupg` para abrir una ventana do
 - **MySQL**: lo mismo para inicios de sesión guardados (`mysql --defaults-group-suffix=nombre`).
 - **Archivos de configuración**: la ubicación de cada archivo, con botones Editar y Mostrar en carpeta.
 
-Pide permisos de administrador al iniciar, porque Chocolatey los necesita. Si los rechaza, las conexiones guardadas y WSL siguen funcionando. Cuando hay una nueva versión, aparece un aviso con **Update and restart**. (Por ahora la ventana está solo en inglés).
+Pide permisos de administrador al iniciar, porque Chocolatey los necesita. Si los rechaza, las conexiones guardadas y WSL siguen funcionando. Cuando hay una nueva versión, aparece un aviso con **Update and restart**.
+
+El idioma (English/Español) se cambia abajo a la izquierda y se recuerda, junto con el de `system-setup`, en `%APPDATA%\system-setup\settings.ini`. Para cambiar el idioma de `system-setup`, ejecute `system-setup --language`.
 
 Registro: `%LOCALAPPDATA%\system-setup\gui.log`.
 

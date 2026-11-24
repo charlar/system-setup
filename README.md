@@ -69,6 +69,8 @@ After setup, run `system-setupg` (Start → Run, or any terminal) for a window w
 
 It asks for administrator rights when it starts, because Chocolatey needs them. If you say no, saved connections and WSL still work. When a new version is pushed, a banner offers **Update and restart**.
 
+The language (English/Español) switch is at the bottom left. The choice is remembered in `%APPDATA%\system-setup\settings.ini` and shared with `system-setup`, which now asks only once (`system-setup --language` to change it).
+
 Logs: `%LOCALAPPDATA%\system-setup\gui.log`. Use `system-setupg --debug` to get browser dev tools.
 
 ---

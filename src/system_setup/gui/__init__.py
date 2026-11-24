@@ -16,7 +16,8 @@ import traceback
 from importlib import resources
 from importlib.metadata import PackageNotFoundError, version
 
-from .. import myconfig, pgconfig, tools, updater, winenv, wsl
+from .. import i18n, myconfig, pgconfig, settings, tools, updater, winenv, wsl
+from ..i18n import t
 from ..jobs import JobRunner
 
 IS_WINDOWS = platform.system() == "Windows"
@@ -43,17 +44,18 @@ def _api(fn):
 def config_files() -> list[dict]:
     appdata = os.environ.get("APPDATA", HOME)
     entries = [
-        ("PostgreSQL services", pgconfig.service_file(), "psql service=<name>"),
-        ("PostgreSQL passwords", pgconfig.pgpass_file(), "host:port:db:user:password"),
-        ("MySQL logins", myconfig.option_file(), "mysql --defaults-group-suffix=<name>"),
-        ("Git config", os.path.join(HOME, ".gitconfig"), ""),
-        ("SSH config", os.path.join(HOME, ".ssh", "config"), ""),
-        ("npm config", os.path.join(HOME, ".npmrc"), ""),
-        ("WSL settings (Windows side)", os.path.join(HOME, ".wslconfig"), "memory, CPUs, networking for all distros"),
-        ("Claude Code settings", os.path.join(HOME, ".claude", "settings.json"), ""),
-        ("Claude Code instructions", os.path.join(HOME, ".claude", "CLAUDE.md"), ""),
-        ("Codex config", os.path.join(HOME, ".codex", "config.toml"), ""),
-        ("VS Code settings", os.path.join(appdata, "Code", "User", "settings.json"), ""),
+        (t("file.pg_services"), pgconfig.service_file(), "psql service=<name>"),
+        (t("file.pg_passwords"), pgconfig.pgpass_file(), "host:port:db:user:password"),
+        (t("file.mysql"), myconfig.option_file(), "mysql --defaults-group-suffix=<name>"),
+        (t("file.git"), os.path.join(HOME, ".gitconfig"), ""),
+        (t("file.ssh"), os.path.join(HOME, ".ssh", "config"), ""),
+        (t("file.npm"), os.path.join(HOME, ".npmrc"), ""),
+        (t("file.wsl"), os.path.join(HOME, ".wslconfig"), t("file.wsl.hint")),
+        (t("file.claude_settings"), os.path.join(HOME, ".claude", "settings.json"), ""),
+        (t("file.claude_md"), os.path.join(HOME, ".claude", "CLAUDE.md"), ""),
+        (t("file.codex"), os.path.join(HOME, ".codex", "config.toml"), ""),
+        (t("file.vscode"), os.path.join(appdata, "Code", "User", "settings.json"), ""),
+        ("System Setup", settings.settings_file(), "language"),
     ]
     return [{"label": l, "path": p, "exists": os.path.exists(p), "hint": h} for l, p, h in entries]
 
@@ -86,22 +88,29 @@ class Api:
             "repo": updater.REPO_DIR,
             "busy": self._jobs.busy,
             "selftest": self._selftest,
+            "lang": i18n.LANG,
         }
+
+    @_api
+    def set_language(self, lang):
+        settings.set_language(lang)
+        i18n.set_lang(lang)
+        return lang
 
     @_api
     def restart_as_admin(self):
         if winenv.relaunch_elevated("system_setup.gui"):
             self._window.destroy()
             return True
-        raise RuntimeError("Elevation was cancelled.")
+        raise RuntimeError(t("err.elevation_cancelled"))
 
     @_api
     def apply_update(self):
         if self._jobs.busy:
-            raise RuntimeError("Wait for the running install to finish first.")
+            raise RuntimeError(t("err.wait_for_job"))
         ok, out = updater.pull()
         if not ok:
-            raise RuntimeError(f"git pull failed:\n{out}")
+            raise RuntimeError(t("err.pull_failed", out=out))
         updater.schedule_reinstall(relaunch="system-setupg")
         threading.Timer(0.5, self._window.destroy).start()
         return out
@@ -131,18 +140,18 @@ class Api:
         if not tool:
             raise ValueError(f"Unknown tool {tool_id}")
         if tool.needs_admin and not winenv.is_admin():
-            raise PermissionError("Chocolatey installs need administrator rights — click 'Restart as administrator'.")
+            raise PermissionError(t("err.needs_admin_choco"))
         return tool
 
     @_api
     def install_tool(self, tool_id, password=""):
         tool = self._tool(tool_id)
-        return self._start(f"Install {tool.name}", tools.install_steps(tool, password or ""))
+        return self._start(t("job.install", name=tool.name), tools.install_steps(tool, password or ""))
 
     @_api
     def remove_tool(self, tool_id):
         tool = self._tool(tool_id)
-        return self._start(f"Remove {tool.name}", tools.remove_steps(tool))
+        return self._start(t("job.remove", name=tool.name), tools.remove_steps(tool))
 
     # ---- WSL ----------------------------------------------------------------
 
@@ -157,22 +166,22 @@ class Api:
     @_api
     def wsl_install(self):
         if not winenv.is_admin():
-            raise PermissionError("Installing WSL needs administrator rights.")
+            raise PermissionError(t("err.needs_admin_wsl"))
         wsl.install_wsl()
         return True
 
     @_api
     def docker_install(self, distro):
-        return self._start(f"Install Docker Engine in {distro}", wsl.docker_install_steps(distro))
+        return self._start(t("job.docker_install", distro=distro), wsl.docker_install_steps(distro))
 
     @_api
     def docker_remove(self, distro, purge_data=False):
-        return self._start(f"Remove Docker from {distro}", wsl.docker_remove_steps(distro, bool(purge_data)))
+        return self._start(t("job.docker_remove", distro=distro), wsl.docker_remove_steps(distro, bool(purge_data)))
 
     @_api
     def apt(self, distro, action, packages):
         pkgs = packages.split() if isinstance(packages, str) else list(packages)
-        return self._start(f"apt {action} {' '.join(pkgs)} ({distro})", wsl.apt_steps(distro, action, pkgs))
+        return self._start(t("job.apt", action=action, packages=" ".join(pkgs), distro=distro), wsl.apt_steps(distro, action, pkgs))
 
     # ---- PostgreSQL ------------------------------------------------------------
 
@@ -285,8 +294,11 @@ def main() -> None:
     parser.add_argument("--no-elevate", action="store_true", help="don't ask for administrator rights")
     parser.add_argument("--debug", action="store_true", help="enable the browser dev tools")
     parser.add_argument("--selftest", action="store_true", help=argparse.SUPPRESS)
+    parser.add_argument("--lang", choices=settings.LANGUAGES, help=argparse.SUPPRESS)  # this run only
     args = parser.parse_args()
     _setup_logging()
+    if args.lang:
+        i18n.set_lang(args.lang)
 
     if not IS_WINDOWS:
         print("system-setupg is a Windows app. Run it from Windows — it manages WSL from there.")

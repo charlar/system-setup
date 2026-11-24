@@ -11,6 +11,7 @@ import time
 from dataclasses import dataclass, field
 from typing import Callable
 
+from .i18n import t
 from .winenv import NO_WINDOW, refresh_path
 
 # choco: 1641 / 3010 = success, reboot required
@@ -58,7 +59,7 @@ class JobRunner:
     def start(self, title: str, steps: list[Step]) -> Job:
         with self._lock:
             if self.busy:
-                raise RuntimeError("Another install is still running — wait for it to finish.")
+                raise RuntimeError(t("job.busy"))
             job = Job(next(self._ids), title, steps)
             self._jobs[job.id] = job
         threading.Thread(target=self._run, args=(job,), daemon=True).start()
@@ -90,9 +91,9 @@ class JobRunner:
         refresh_path()
         job.state = "ok" if ok else "failed"
         job.log("")
-        job.log("=== Finished successfully ===" if ok else "=== Failed ===")
+        job.log(t("job.ok") if ok else t("job.failed"))
         if job.reboot:
-            job.log("A reboot is required to finish this install.")
+            job.log(t("job.reboot"))
         if self.on_finish:
             try:
                 self.on_finish(job)
@@ -114,7 +115,7 @@ def run_cmd(job: Job, step: Step) -> bool:
             env=env, creationflags=NO_WINDOW,
         )
     except FileNotFoundError:
-        job.log(f"[error] command not found: {step.argv[0]}")
+        job.log(t("job.not_found", cmd=step.argv[0]))
         return False
     if step.stdin is not None:
         # write stdin from a thread so a chatty process can't deadlock us

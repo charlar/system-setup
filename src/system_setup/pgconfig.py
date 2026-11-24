@@ -13,6 +13,7 @@ import re
 import shutil
 import subprocess
 
+from .i18n import t
 from .inifile import IniFile
 from .winenv import NO_WINDOW
 
@@ -143,10 +144,10 @@ def save_service(data: dict, old_name: str | None = None) -> None:
     """
     name = (data.get("name") or "").strip()
     if not name or any(c in name for c in "[]=\n"):
-        raise ValueError("Service name is required and can't contain [ ] =")
+        raise ValueError(t("err.pg_name"))
     vals = {k: (data.get(k) or "").strip() for k in SERVICE_KEYS}
     if not vals["user"]:
-        raise ValueError("User is required")
+        raise ValueError(t("err.user_required"))
     ini = IniFile(service_file())
     old_vals = ini.get(old_name) if old_name else None
     ini.set(name, vals, old_name=old_name)
@@ -188,7 +189,7 @@ def find_psql() -> str | None:
 def test_service(name: str) -> tuple[bool, str]:
     psql = find_psql()
     if not psql:
-        return False, "psql not found — install PostgreSQL first."
+        return False, t("err.psql_missing")
     env = dict(os.environ, PGCONNECT_TIMEOUT="5")
     try:
         r = subprocess.run(
@@ -197,6 +198,6 @@ def test_service(name: str) -> tuple[bool, str]:
             stdin=subprocess.DEVNULL, creationflags=NO_WINDOW,
         )
     except subprocess.TimeoutExpired:
-        return False, "Timed out."
+        return False, t("err.timeout")
     out = (r.stdout + r.stderr).strip()
     return r.returncode == 0, out

@@ -76,7 +76,8 @@ class IniFile:
         """
         target = old_name if old_name and self.has(old_name) else name
         if target != name and self.has(name):
-            raise ValueError(f"'{name}' already exists")
+            from .i18n import t
+            raise ValueError(t("err.exists", name=name))
         for i, (n, body) in enumerate(self.sections):
             if n == target:
                 self.sections[i] = (name, _merge_body(body, values))

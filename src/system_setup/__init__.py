@@ -288,7 +288,7 @@ STRINGS = {
         "mysql_password":   "MySQL root password: ",
         "mysql_overwrite":  "'{section}' already exists in my.cnf. Overwrite? [y/N] ",
         "mysql_config_done": "my.cnf written (mysql --defaults-group-suffix={service}).",
-        "done":             "Setup complete.",
+        "done":             "Setup complete. For more installs and saved connections, run: system-setupg\n(Change language: system-setup --language)",
     },
     "es": {
         "title":            "=== Configuración del Sistema ===",
@@ -318,7 +318,7 @@ STRINGS = {
         "mysql_password":   "Contraseña de MySQL root: ",
         "mysql_overwrite":  "'{section}' ya existe en my.cnf. ¿Sobreescribir? [s/N] ",
         "mysql_config_done": "my.cnf escrito (mysql --defaults-group-suffix={service}).",
-        "done":             "Configuración completa.",
+        "done":             "Configuración completa. Para más instalaciones y conexiones guardadas, ejecute: system-setupg\n(Cambiar idioma: system-setup --language)",
     },
 }
 
@@ -376,12 +376,22 @@ TOOLS: dict[str, dict] = {
 # Helpers
 # ---------------------------------------------------------------------------
 
-def _choose_language() -> dict:
+def _choose_language(force: bool = False) -> dict:
+    """Ask once, then remember the choice in settings.ini (shared with system-setupg)."""
+    from . import settings
+    saved = None if force else settings.get_language()
+    if saved:
+        return STRINGS[saved]
     try:
         choice = input(f"\n{STRINGS['en']['lang_prompt']}").strip()
     except (EOFError, KeyboardInterrupt):
         choice = "1"
-    return STRINGS["es"] if choice == "2" else STRINGS["en"]
+    lang = "es" if choice == "2" else "en"
+    try:
+        settings.set_language(lang)
+    except OSError:
+        pass
+    return STRINGS[lang]
 
 
 def _ask(prompt: str, s: dict) -> bool:
@@ -441,7 +451,8 @@ def _check_for_updates(s: dict) -> bool:
 # ---------------------------------------------------------------------------
 
 def main() -> None:
-    s = _choose_language()
+    import sys
+    s = _choose_language(force="--language" in sys.argv[1:])
     print(f"\n{s['title']}\n")
 
     if _check_for_updates(s):

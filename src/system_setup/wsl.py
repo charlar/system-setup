@@ -8,6 +8,7 @@ import re
 import subprocess
 from importlib import resources
 
+from .i18n import t
 from .jobs import Job, Step, run_cmd
 from .winenv import NO_WINDOW
 
@@ -56,7 +57,7 @@ def distros() -> dict:
     """{'installed': bool, 'distros': [{name, state, version, default}], 'message': str}"""
     code, out = _wsl(["-l", "-v"], timeout=30)
     if code == -1:
-        return {"installed": False, "distros": [], "message": "WSL is not installed."}
+        return {"installed": False, "distros": [], "message": t("wsl.not_installed")}
     result = []
     for line in out.splitlines()[1:]:
         line = line.rstrip()
@@ -68,7 +69,7 @@ def distros() -> dict:
             result.append({"name": " ".join(parts[:-2]), "state": parts[-2],
                            "version": parts[-1], "default": default})
     if code != 0 and not result:
-        return {"installed": False, "distros": [], "message": out.strip() or "WSL has no distros installed."}
+        return {"installed": False, "distros": [], "message": out.strip() or t("wsl.no_distros")}
     return {"installed": True, "distros": result, "message": ""}
 
 
@@ -108,10 +109,10 @@ def docker_install_steps(distro: str) -> list[Step]:
         code, out = _sh(distro, "whoami")
         user = out.strip().splitlines()[-1] if code == 0 and out.strip() else ""
         if not user:
-            job.log(f"[error] Couldn't start {distro}: {out.strip()}")
+            job.log(t("log.wsl_start_failed", distro=distro, error=out.strip()))
             return False
         job.data["user"] = user
-        job.log(f"Default Linux user: {user}")
+        job.log(t("log.wsl_user", user=user))
         return True
 
     def run_script(job: Job) -> bool:
@@ -125,7 +126,7 @@ def docker_install_steps(distro: str) -> list[Step]:
     def restart_if_needed(job: Job) -> bool:
         if not job.data.get("restart"):
             return True
-        job.log(f"Restarting {distro} so systemd starts (open WSL terminals for it will close)...")
+        job.log(t("log.wsl_restart", distro=distro))
         if not run_cmd(job, Step(["wsl.exe", "--terminate", distro])):
             return False
         return run_cmd(job, Step(["wsl.exe", "-d", distro, "-u", "root", "--", "sh", "-s"],
@@ -137,7 +138,7 @@ def docker_install_steps(distro: str) -> list[Step]:
                                stdin="docker run --rm hello-world\n",
                                display=f"wsl -d {distro} -u root -- docker run --rm hello-world"))
         if ok:
-            job.log(f"Docker is working. Open a NEW {distro} terminal to use `docker` without sudo.")
+            job.log(t("log.docker_ok", distro=distro))
         return ok
 
     return [Step(call=find_user), Step(call=run_script), Step(call=restart_if_needed), Step(call=verify)]
@@ -154,20 +155,24 @@ def docker_remove_steps(distro: str, purge_data: bool = False) -> list[Step]:
         "rm -f /etc/apt/sources.list.d/docker.sources /etc/apt/sources.list.d/docker.list /etc/apt/keyrings/docker.asc\n"
     )
     if purge_data:
-        script += "rm -rf /var/lib/docker /var/lib/containerd\necho 'Deleted images, containers and volumes.'\n"
-    else:
-        script += "echo 'Images, containers and volumes were kept in /var/lib/docker.'\n"
+        script += "rm -rf /var/lib/docker /var/lib/containerd\n"
+
+    def done(job: Job) -> bool:
+        job.log(t("log.docker_data_deleted") if purge_data else t("log.docker_data_kept"))
+        return True
+
     return [Step(["wsl.exe", "-d", distro, "-u", "root", "--", "bash", "-s"], stdin=script,
-                 display=f"wsl -d {distro} -u root -- apt-get purge docker-ce ...")]
+                 display=f"wsl -d {distro} -u root -- apt-get purge docker-ce ..."),
+            Step(call=done)]
 
 
 def apt_steps(distro: str, action: str, packages: list[str]) -> list[Step]:
     pkgs = [p.strip().lower() for p in packages if p.strip()]
     if not pkgs:
-        raise ValueError("Enter at least one package name.")
+        raise ValueError(t("err.apt_empty"))
     bad = [p for p in pkgs if not APT_NAME.match(p)]
     if bad:
-        raise ValueError(f"Not a valid package name: {', '.join(bad)}")
+        raise ValueError(t("err.apt_bad", names=", ".join(bad)))
     if action not in ("install", "remove"):
         raise ValueError("action must be install or remove")
     script = "set -e\nexport DEBIAN_FRONTEND=noninteractive\n"
