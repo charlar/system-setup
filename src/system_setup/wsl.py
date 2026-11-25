@@ -79,6 +79,8 @@ echo "user=$(whoami)"
 echo "systemd=$( [ "$(ps -p 1 -o comm= 2>/dev/null)" = systemd ] && echo yes || echo no)"
 echo "docker=$(docker --version 2>/dev/null)"
 echo "compose=$(docker compose version 2>/dev/null)"
+# old standalone Compose v1 (docker-compose with a hyphen)
+echo "compose_v1=$(docker-compose version --short 2>/dev/null)"
 echo "active=$(systemctl is-active docker 2>/dev/null)"
 echo "pkg=$(dpkg -s docker-ce >/dev/null 2>&1 && echo "docker-ce (Docker's official repo)" || { dpkg -s docker.io >/dev/null 2>&1 && echo "docker.io (Ubuntu's package)"; })"
 echo "ingroup=$(id -nG 2>/dev/null | tr ' ' '\n' | grep -qx docker && echo yes || echo no)"

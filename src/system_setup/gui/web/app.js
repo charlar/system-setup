@@ -328,7 +328,7 @@ async function loadDistro(name) {
         <span>systemd</span><span>${d.systemd === "yes" ? tr("docker.systemd_on") : tr("docker.systemd_off")}</span>
         <span>Docker</span><span>${esc(d.docker || "—")}</span>
         <span>${tr("docker.package")}</span><span>${esc(d.pkg || "—")}</span>
-        <span>Compose</span><span>${esc(d.compose || "—")}</span>
+        <span>Compose</span><span>${esc(d.compose || (d.compose_v1 ? tr("docker.compose_v1", { version: d.compose_v1 }) : "—"))}</span>
         <span>${tr("docker.nosudo")}</span><span>${d.ingroup === "yes" ? tr("docker.yes") : tr("docker.nosudo_no")}</span>
       </div>
       ${d.desktop === "yes" ? `<p class="sub">${tr("docker.desktop_note")}</p>` : ""}
@@ -350,7 +350,7 @@ async function loadDistro(name) {
       runJob(call("docker_install", name), () => loadDistro(name));
     }, d.desktop === "yes"));
   }
-  if (d.docker && d.active === "active" && (d.pkg || "").startsWith("docker.io")) {
+  if (d.docker && d.active === "active" && ((d.pkg || "").startsWith("docker.io") || (!d.compose && d.compose_v1))) {
     da.appendChild(button(tr("docker.switch"), "btn", () => {
       if (!confirm(tr("docker.switch_confirm", { name }))) return;
       runJob(call("docker_install", name), () => loadDistro(name));
