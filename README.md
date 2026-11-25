@@ -74,7 +74,12 @@ Chocolatey needs administrator rights:
 - **Admin account:** it asks once when it starts. If you say no, each Chocolatey install asks instead.
 - **Standard account:** the window runs as you (so saved connections stay in your own profile), and each Chocolatey install asks for an administrator's password.
 
-When a new version is pushed, a banner offers **Update and restart**.
+When a new version is released, a banner offers **Update and restart**. The **Updates** switch at the bottom left picks what counts as new:
+
+- **Releases** (default): only tagged versions (`v0.3.0`, …).
+- **Latest**: whatever is on `master`, even before it's tagged.
+
+From the command line: `system-setup --updates stable` or `system-setup --updates latest`.
 
 The language (English/Español) switch is at the bottom left. The choice is remembered in `%APPDATA%\system-setup\settings.ini` and shared with `system-setup`, which now asks only once (`system-setup --language` to change it).
 

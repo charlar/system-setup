@@ -428,9 +428,11 @@ def _ensure_choco(s: dict) -> bool:
 
 def _check_for_updates(s: dict) -> bool:
     from . import updater
-    if not updater.update_available():
+    target = updater.check()
+    if not target:
         return False
 
+    print(f"  -> {target}")
     if not _ask(s["update_found"], s):
         print(f"  {s['update_skip']}")
         return False
@@ -453,6 +455,18 @@ def _check_for_updates(s: dict) -> bool:
 def main() -> None:
     import sys
     s = _choose_language(force="--language" in sys.argv[1:])
+
+    # system-setup --updates stable|latest   (stable = released versions only)
+    if "--updates" in sys.argv[1:]:
+        from . import updater
+        i = sys.argv.index("--updates")
+        channel = sys.argv[i + 1] if i + 1 < len(sys.argv) else ""
+        if channel not in updater.CHANNELS:
+            print("Usage: system-setup --updates stable|latest")
+            return
+        updater.set_channel(channel)
+        print(f"  updates = {channel}  ({'released versions only' if channel == 'stable' else 'newest code, even unreleased'})")
+        return
     print(f"\n{s['title']}\n")
 
     if _check_for_updates(s):

@@ -70,7 +70,8 @@ class Api:
         threading.Thread(target=self._check_update, daemon=True).start()
 
     def _check_update(self):
-        self._update = updater.update_available()
+        # str = the version on offer ("v0.3.0" / "master abc1234"), False = none, None = checking
+        self._update = updater.check() or False
 
     # ---- app ----------------------------------------------------------------
 
@@ -87,6 +88,7 @@ class Api:
             "account": "admin" if winenv.is_admin_account() else "standard",
             "windows": IS_WINDOWS,
             "update": self._update,
+            "channel": updater.get_channel(),
             "repo": updater.REPO_DIR,
             "busy": self._jobs.busy,
             "selftest": self._selftest,
@@ -98,6 +100,13 @@ class Api:
         settings.set_language(lang)
         i18n.set_lang(lang)
         return lang
+
+    @_api
+    def set_update_channel(self, channel):
+        updater.set_channel(channel)
+        self._update = None
+        threading.Thread(target=self._check_update, daemon=True).start()
+        return channel
 
     @_api
     def restart_as_admin(self):

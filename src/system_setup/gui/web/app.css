@@ -66,6 +66,7 @@ h2 { font-size: 16px; margin: 0 0 14px; font-weight: 600; }
 }
 .lang-switch button + button { border-left: 1px solid var(--line); }
 .lang-switch button.active { background: var(--accent); color: var(--accent-text); }
+.switch-label { color: var(--muted); font-size: 11px; margin: 0 10px 4px; }
 
 main { flex: 1; overflow-y: auto; padding: 22px 28px 120px; }
 .tab-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; margin-bottom: 16px; }

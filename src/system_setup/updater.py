@@ -1,18 +1,38 @@
 """
 Self-update: the bootstrap clones the repo to ~/system-setup and installs it
-with `uv tool install`. Updating = git pull + reinstall from that clone.
+with `uv tool install`. Updating = move that clone to the new version + reinstall.
+
+Two channels (settings.ini, [general] updates = stable | latest):
+  stable  (default)  only released versions: the newest vX.Y.Z tag
+  latest             whatever is on master, tagged or not
 """
 import os
 import platform
+import re
 import shutil
 import subprocess
 import tempfile
+from importlib.metadata import PackageNotFoundError, version
 
+from . import settings
 from .winenv import NO_WINDOW
 
 IS_WINDOWS = platform.system() == "Windows"
 REPO_DIR = os.path.join(os.path.expanduser("~"), "system-setup")
-BRANCH = "origin/master"
+BRANCH = "master"
+CHANNELS = ("stable", "latest")
+_TAG = re.compile(r"^v(\d+)\.(\d+)\.(\d+)$")
+
+
+def get_channel() -> str:
+    ch = settings.get("updates", "stable")
+    return ch if ch in CHANNELS else "stable"
+
+
+def set_channel(channel: str) -> None:
+    if channel not in CHANNELS:
+        raise ValueError(f"Unknown update channel: {channel}")
+    settings.set("updates", channel)
 
 
 def _git(*args: str, timeout: int = 15) -> subprocess.CompletedProcess:
@@ -23,32 +43,87 @@ def _git(*args: str, timeout: int = 15) -> subprocess.CompletedProcess:
     )
 
 
-def update_available() -> bool:
+def _installed_version() -> tuple[int, int, int] | None:
+    try:
+        m = re.match(r"^(\d+)\.(\d+)\.(\d+)", version("system-setup"))
+        return tuple(map(int, m.groups())) if m else None
+    except PackageNotFoundError:
+        return None
+
+
+def _newest_tag() -> tuple[str, tuple[int, int, int]] | None:
+    tags = []
+    for name in _git("tag", "--list", "v*").stdout.split():
+        m = _TAG.match(name)
+        if m:
+            tags.append((tuple(map(int, m.groups())), name))
+    if not tags:
+        return None
+    ver, name = max(tags)
+    return name, ver
+
+
+def check(channel: str | None = None) -> str | None:
     """
-    True only when origin/master has commits we don't have AND we can
-    fast-forward to it (i.e. HEAD is an ancestor). Local-only commits in the
-    clone don't count as an 'update'.
+    The version we'd update to ("v0.3.0", or "master abc1234" on the latest
+    channel), or None when there's nothing newer.
+
+    stable: the newest vX.Y.Z tag, if its version is higher than the installed
+            one, or the same version but we're on an untagged build of it
+            (e.g. switched over from the latest channel).
+    latest: origin/master, if it has commits we don't and we can fast-forward
+            (local-only commits in the clone don't count as an update).
     """
+    channel = channel or get_channel()
     if not os.path.exists(os.path.join(REPO_DIR, ".git")):
-        return False
+        return None
     try:
         subprocess.run(
             ["git", "config", "--global", "--add", "safe.directory", REPO_DIR],
             capture_output=True, stdin=subprocess.DEVNULL, creationflags=NO_WINDOW,
         )
-        _git("fetch", "origin", "--quiet")
-        local = _git("rev-parse", "HEAD").stdout.strip()
-        remote = _git("rev-parse", BRANCH).stdout.strip()
-        if not local or not remote or local == remote:
-            return False
-        return _git("merge-base", "--is-ancestor", "HEAD", BRANCH).returncode == 0
+        _git("fetch", "origin", "--tags", "--force", "--quiet", timeout=30)
+        head = _git("rev-parse", "HEAD").stdout.strip()
+        if not head:
+            return None
+        if channel == "latest":
+            remote = _git("rev-parse", f"origin/{BRANCH}").stdout.strip()
+            if not remote or remote == head:
+                return None
+            if _git("merge-base", "--is-ancestor", "HEAD", f"origin/{BRANCH}").returncode != 0:
+                return None
+            return f"{BRANCH} {remote[:7]}"
+        newest = _newest_tag()
+        if not newest:
+            return None
+        name, ver = newest
+        installed = _installed_version()
+        if installed is None or ver > installed:
+            return name
+        if ver == installed and _git("rev-parse", f"{name}^{{commit}}").stdout.strip() != head:
+            return name
+        return None
     except Exception:
-        return False
+        return None
 
 
-def pull() -> tuple[bool, str]:
-    r = _git("pull", "--ff-only", timeout=60)
-    return r.returncode == 0, (r.stdout + r.stderr).strip()
+def update_available() -> bool:
+    return check() is not None
+
+
+def pull(channel: str | None = None) -> tuple[bool, str]:
+    """Move the clone to the update check() found. Doesn't reinstall."""
+    channel = channel or get_channel()
+    target = check(channel)
+    if not target:
+        return False, "No update found."
+    if channel == "latest":
+        r = _git("checkout", "--quiet", BRANCH, timeout=30)      # leave a detached release tag
+        if r.returncode == 0:
+            r = _git("merge", "--ff-only", f"origin/{BRANCH}", timeout=60)
+    else:
+        r = _git("-c", "advice.detachedHead=false", "checkout", "--quiet", "--detach", target, timeout=60)
+    return r.returncode == 0, "\n".join([target, r.stdout.strip(), r.stderr.strip()]).strip()
 
 
 def schedule_reinstall(relaunch: str | None = None) -> None:

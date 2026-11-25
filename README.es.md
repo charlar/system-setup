@@ -74,7 +74,12 @@ Chocolatey necesita permisos de administrador:
 - **Cuenta de administrador:** los pide una vez al iniciar. Si los rechaza, cada instalación con Chocolatey los pide por separado.
 - **Cuenta estándar:** la ventana se ejecuta con su usuario (así las conexiones guardadas quedan en su propio perfil), y cada instalación con Chocolatey pide la contraseña de un administrador.
 
-Cuando hay una nueva versión, aparece un aviso con **Actualizar y reiniciar**.
+Cuando se publica una nueva versión, aparece un aviso con **Actualizar y reiniciar**. El interruptor **Actualizaciones** abajo a la izquierda define qué cuenta como nuevo:
+
+- **Versiones** (predeterminado): solo versiones etiquetadas (`v0.3.0`, …).
+- **Lo último**: lo que esté en `master`, aunque aún no tenga etiqueta.
+
+Desde la línea de comandos: `system-setup --updates stable` o `system-setup --updates latest`.
 
 El idioma (English/Español) se cambia abajo a la izquierda y se recuerda, junto con el de `system-setup`, en `%APPDATA%\system-setup\settings.ini`. Para cambiar el idioma de `system-setup`, ejecute `system-setup --language`.
 

@@ -53,7 +53,7 @@ function button(label, cls, onclick, locked = false, title = "") {
 // ---------------------------------------------------------------------------
 
 function renderLangSwitch() {
-  document.querySelectorAll(".lang-switch button").forEach((b) => b.classList.toggle("active", b.dataset.lang === LANG));
+  document.querySelectorAll(".lang-switch button[data-lang]").forEach((b) => b.classList.toggle("active", b.dataset.lang === LANG));
 }
 
 async function switchLanguage(lang) {
@@ -63,6 +63,7 @@ async function switchLanguage(lang) {
     LANG = lang;
     applyStaticText();
     renderLangSwitch();
+    renderChannelSwitch();
     renderMeta();
     renderBanners();
     // re-render tabs (tool descriptions etc. come from Python in the new language)
@@ -71,7 +72,32 @@ async function switchLanguage(lang) {
   });
 }
 
-document.querySelectorAll(".lang-switch button").forEach((b) => (b.onclick = () => switchLanguage(b.dataset.lang)));
+document.querySelectorAll(".lang-switch button[data-lang]").forEach((b) => (b.onclick = () => switchLanguage(b.dataset.lang)));
+
+// ---------------------------------------------------------------------------
+// Update channel: stable (tagged releases) or latest (master)
+// ---------------------------------------------------------------------------
+
+function renderChannelSwitch() {
+  document.querySelectorAll(".chan-switch button").forEach((b) => {
+    b.classList.toggle("active", b.dataset.channel === state.channel);
+    b.title = tr(`updates.${b.dataset.channel}_tip`);
+  });
+}
+
+async function switchChannel(channel) {
+  if (channel === state.channel) return;
+  await guard(async () => {
+    await call("set_update_channel", channel);
+    state.channel = channel;
+    state.update = null;
+    renderChannelSwitch();
+    renderBanners();
+    pollState();
+  });
+}
+
+document.querySelectorAll(".chan-switch button").forEach((b) => (b.onclick = () => switchChannel(b.dataset.channel)));
 
 // ---------------------------------------------------------------------------
 // Tabs
@@ -610,7 +636,7 @@ function renderBanners() {
   if (state.update) {
     const b = document.createElement("div");
     b.className = "banner info sticky";
-    b.innerHTML = `<span class="grow">${updating ? tr("banner.updating") : tr("banner.update")}</span>`;
+    b.innerHTML = `<span class="grow">${updating ? tr("banner.updating") : tr("banner.update", { target: esc(state.update) })}</span>`;
     if (!updating) {
       b.appendChild(button(tr("banner.update_btn"), "btn primary", async () => {
         if (!confirm(tr("banner.update_confirm"))) return;
@@ -633,6 +659,7 @@ async function pollState() {
   try {
     state = (await call("get_state")).data;
     renderMeta();
+    renderChannelSwitch();
     renderBanners();
   } catch (e) { /* ignore */ }
   if (state.update === null) setTimeout(pollState, 2000);
