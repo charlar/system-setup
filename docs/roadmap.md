@@ -1,6 +1,12 @@
 # Roadmap and future improvements
 
-## Next: v0.3
+## Next: v0.2.1
+
+- Reliable updates: versions kept in an app-owned folder, verified after install,
+  automatic and manual rollback, and deletion of old versions.
+  See [update-plan.md](update-plan.md).
+
+## Then: v0.3
 
 - Apps as plugins, a data-only catalog, and a filtered Apps screen with slide-over
   configuration panels. See [plugin-plan.md](plugin-plan.md).
