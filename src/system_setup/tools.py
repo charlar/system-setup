@@ -198,7 +198,20 @@ def _choco(*args: str, display: str = "") -> Step:
     return Step(call=run)
 
 
+def generate_password(length: int = 20) -> str:
+    # letters + digits only: safe for choco's parameter parser, option files and SQL
+    import secrets
+    import string
+    alphabet = string.ascii_letters + string.digits
+    return "".join(secrets.choice(alphabet) for _ in range(length))
+
+
 def install_steps(tool: Tool, password: str = "") -> list[Step]:
+    generated = False
+    if tool.needs_password and not password:
+        # Install with a strong random password; it's saved to the 'root' service/login,
+        # where it can be revealed or replaced later with "Change password".
+        password, generated = generate_password(), True
     if tool.id == "claude":
         return [_ps("irm https://claude.ai/install.ps1 | iex", "irm https://claude.ai/install.ps1 | iex")]
     if tool.id == "codex":
@@ -211,16 +224,14 @@ def install_steps(tool: Tool, password: str = "") -> list[Step]:
             _choco("install", "postgresql", "-y", "--no-progress",
                    "--params", f"/Password:{password}", "--params-global",
                    display="choco install postgresql -y --no-progress --params /Password:******** --params-global"),
-            Step(call=lambda job: _pg_post(job, password)),
+            Step(call=lambda job: _pg_post(job, password, generated)),
         ]
     if tool.id == "mysql":
-        if not password:
-            raise ValueError(t("err.password_required"))
         myconfig._quote(password)   # validates
         return [
             Step(call=_ensure_choco),
             _choco("install", "mysql", "-y", "--no-progress"),
-            Step(call=lambda job: _mysql_post(job, password)),
+            Step(call=lambda job: _mysql_post(job, password, generated)),
         ]
     return [Step(call=_ensure_choco), _choco("install", tool.choco, "-y", "--no-progress")]
 
@@ -264,40 +275,67 @@ def _npm(job: Job, action: str, pkg: str) -> bool:
     return run_cmd(job, step)
 
 
-def _pg_post(job: Job, password: str) -> bool:
+def _pg_password_works(password: str) -> bool:
+    psql = pgconfig.find_psql()
+    r = _quiet_env([psql, "-h", "localhost", "-p", "5432", "-U", "postgres", "-d", "postgres",
+                    "-w", "-X", "-At", "-c", "select 1"], {"PGPASSWORD": password, "PGCONNECT_TIMEOUT": "10"})
+    return bool(r and r.returncode == 0)
+
+
+def _quiet_env(argv: list[str], extra_env: dict[str, str]) -> subprocess.CompletedProcess | None:
+    try:
+        return subprocess.run(argv, capture_output=True, text=True, timeout=30, stdin=subprocess.DEVNULL,
+                              env=dict(os.environ, **extra_env), creationflags=NO_WINDOW)
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+
+
+def _pg_post(job: Job, password: str, generated: bool) -> bool:
     refresh_path()
     if not pgconfig.find_psql():
         job.log(t("log.psql_missing"))
         return True
+    svc = {"name": "root", "host": "localhost", "port": "5432", "dbname": "postgres", "user": "postgres",
+           "password": password}
     existing = {s["name"] for s in pgconfig.list_services()}
-    if "root" in existing:
-        job.log(t("log.pg_root_exists"))
+    if _pg_password_works(password):
+        pgconfig.save_service(svc, old_name="root" if "root" in existing else None)
+        job.log(t("log.pg_root_saved", path=pgconfig.service_file()))
+        if generated:
+            job.log(t("log.pw_generated_pg"))
+    elif "root" not in existing:
+        # can't verify (server still starting?) — save it anyway so it isn't lost
+        pgconfig.save_service(svc)
+        job.log(t("log.pg_unverified", name="root"))
     else:
-        pgconfig.save_service({"name": "root", "host": "localhost", "port": "5432",
-                               "dbname": "postgres", "user": "postgres", "password": password})
-        job.log(t("log.pg_root_created", path=pgconfig.service_file()))
+        # Don't overwrite a working 'root' with a password we couldn't verify. (pgpass keys
+        # passwords by server+user, so a second service for 'postgres' can't hold a different
+        # one.) Usually this means PostgreSQL was already installed and kept its old password.
+        job.log(t("log.pg_kept_root", password=password if generated else "********"))
     return True
 
 
-def _mysql_post(job: Job, password: str) -> bool:
+def _mysql_post(job: Job, password: str, generated: bool) -> bool:
     refresh_path()
     mysql = myconfig.find_mysql()
     if not mysql:
         job.log(t("log.mysql_missing"))
         return False
-    job.log("> mysql -u root --skip-password -e \"ALTER USER 'root'@'localhost' IDENTIFIED BY '********'\"")
+    job.log("> mysql -u root --skip-password  (ALTER USER 'root'@'localhost' IDENTIFIED BY '********')")
+    # a fresh choco install leaves root with no password; the SQL goes over stdin
     r = subprocess.run(
-        [mysql, "--no-defaults", "-u", "root", "--skip-password", "-e",
-         f"ALTER USER 'root'@'localhost' IDENTIFIED BY '{_sql_str(password)}';"],
-        capture_output=True, text=True, timeout=60, stdin=subprocess.DEVNULL, creationflags=NO_WINDOW,
+        [mysql, "--no-defaults", "-u", "root", "--skip-password", "--connect-timeout=10"],
+        input=f"ALTER USER 'root'@'localhost' IDENTIFIED BY '{_sql_str(password)}';\n",
+        capture_output=True, text=True, timeout=60, creationflags=NO_WINDOW,
     )
     if r.returncode != 0:
         job.log((r.stdout + r.stderr).strip())
         job.log(t("log.mysql_pw_failed"))
+        return True        # install itself worked; the login just isn't saved
     existing = {l["name"] for l in myconfig.list_logins()}
-    if "root" in existing:
-        job.log(t("log.my_root_exists"))
-    else:
-        myconfig.save_login({"name": "root", "host": "localhost", "user": "root", "password": password})
-        job.log(t("log.my_root_created", path=myconfig.option_file()))
+    myconfig.save_login({"name": "root", "host": "localhost", "user": "root", "password": password},
+                        old_name="root" if "root" in existing else None)
+    job.log(t("log.my_root_saved", path=myconfig.option_file()))
+    if generated:
+        job.log(t("log.pw_generated_my"))
     return True

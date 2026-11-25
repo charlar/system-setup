@@ -249,16 +249,17 @@ async function installTool(tool) {
       okText: tr("btn.install"),
       intro: esc(tool.note),
       fields: [
-        { name: "password", label: tool.id === "mysql" ? tr("tools.pw_mysql") : tr("tools.pw_pg"),
-          type: "password", required: true, hint: tr("tools.pw_hint") },
-        { name: "confirm", label: tr("tools.pw_confirm"), type: "password", required: true },
+        { name: "password", label: (tool.id === "mysql" ? tr("tools.pw_mysql") : tr("tools.pw_pg")) + tr("tools.pw_optional"),
+          type: "password", hint: tr("tools.pw_hint") },
+        { name: "confirm", label: tr("tools.pw_confirm"), type: "password" },
       ],
       onSubmit: async (v) => {
         if (v.password !== v.confirm) throw new Error(tr("tools.pw_mismatch"));
-        return v.password;
+        return { password: v.password };     // "" = generate one
       },
     });
     if (!pw) return;
+    pw = pw.password;
   }
   runJob(call("install_tool", tool.id, pw), loadTools);
 }
