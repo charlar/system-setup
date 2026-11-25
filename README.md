@@ -42,17 +42,19 @@ curl -fsSL https://raw.githubusercontent.com/charlar/system-setup/master/bootstr
 3. Installs **uv** (fast Python package manager) if not already present.
 4. Clones this repository to `~/system-setup` (or pulls the latest if already cloned).
 5. Uses `uv` to install the required Python version.
-6. Runs `uv tool install . --reinstall` to register `system-setup`, `psql`, and `mysql` commands.
-7. Runs `system-setup`, which checks for each optional tool and asks whether to install it.
+6. Runs `uv tool install . --reinstall` to register the `system-setup`, `system-setupg`, `psql`, and `mysql` commands.
+7. Asks whether to continue in the **desktop app** (`system-setupg`, the default after 30 seconds) or the **command line** (`system-setup`). On WSL it runs the command line.
+8. Adds **System Setup** to the Start menu (Windows).
 
 ---
 
 ## Re-running setup
 
-After the initial bootstrap, run from any terminal:
+After the initial bootstrap, open **Start menu → System Setup**, or run from any terminal:
 
 ```cmd
-system-setup
+system-setupg   :: desktop app (Windows)
+system-setup    :: command line
 ```
 
 ---

@@ -42,17 +42,19 @@ curl -fsSL https://raw.githubusercontent.com/charlar/system-setup/master/bootstr
 3. Instala **uv** (gestor de paquetes Python rápido) si no está disponible.
 4. Clona este repositorio en `~/system-setup` (o actualiza si ya existe).
 5. Usa `uv` para instalar la versión requerida de Python.
-6. Ejecuta `uv tool install . --reinstall` para registrar los comandos `system-setup`, `psql` y `mysql`.
-7. Ejecuta `system-setup`, que verifica cada herramienta opcional y pregunta si desea instalarla.
+6. Ejecuta `uv tool install . --reinstall` para registrar los comandos `system-setup`, `system-setupg`, `psql` y `mysql`.
+7. Pregunta si desea continuar en la **aplicación de escritorio** (`system-setupg`, la opción predeterminada después de 30 segundos) o en la **línea de comandos** (`system-setup`). En WSL usa la línea de comandos.
+8. Agrega **System Setup** al menú Inicio (Windows).
 
 ---
 
 ## Volver a ejecutar la configuración
 
-Tras el bootstrap inicial, ejecute desde cualquier terminal:
+Tras el bootstrap inicial, abra **menú Inicio → System Setup**, o ejecute desde cualquier terminal:
 
 ```cmd
-system-setup
+system-setupg   :: aplicación de escritorio (Windows)
+system-setup    :: línea de comandos
 ```
 
 ---
