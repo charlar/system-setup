@@ -74,11 +74,32 @@ cd /d "%REPO_DIR%"
 echo [setup] Ensuring Python is available / Verificando que Python este disponible...
 uv python install
 
-:: ---------- install and run ----------
+:: ---------- install ----------
 echo [setup] Installing system-setup tool / Instalando herramienta system-setup...
 uv tool install . --reinstall
-echo [setup] Running setup / Ejecutando configuracion...
-system-setup
 
-endlocal
-pause
+:: Where uv puts tool commands (normally %USERPROFILE%\.local\bin)
+set "UV_BIN=%USERPROFILE%\.local\bin"
+for /f "delims=" %%p in ('uv tool dir --bin 2^>nul') do set "UV_BIN=%%p"
+set "PATH=!UV_BIN!;!PATH!"
+
+:: ---------- desktop app or command line ----------
+:: (no goto/labels: this file may arrive with LF line endings, where cmd mishandles labels)
+:: The desktop app inherits this window's admin rights and up-to-date PATH, so no restart.
+echo.
+echo What next? / Que sigue?
+echo   [1] Desktop app / Aplicacion de escritorio  (recommended / recomendado)
+echo   [2] Command line / Linea de comandos
+choice /c 12 /n /t 30 /d 1 /m "Choice / Opcion [1]: "
+if errorlevel 2 (
+    echo [setup] Running setup / Ejecutando configuracion...
+    system-setup
+    endlocal
+    pause
+) else (
+    echo [setup] Opening System Setup... / Abriendo System Setup...
+    echo [setup] Later: Start menu - System Setup / Despues: menu Inicio - System Setup
+    start "" "!UV_BIN!\system-setupg.exe"
+    timeout /t 4 /nobreak >nul
+    endlocal
+)

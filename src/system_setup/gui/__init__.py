@@ -328,6 +328,9 @@ def main() -> None:
     import webview
 
     winenv.refresh_path()
+    if not args.selftest:
+        from ..shortcut import ensure_shortcut
+        threading.Thread(target=ensure_shortcut, daemon=True).start()   # Start menu > System Setup
     api = Api(selftest=args.selftest)
     page = resources.files("system_setup.gui").joinpath("web", "index.html")
     window = webview.create_window(

@@ -57,3 +57,5 @@ info "Installing system-setup tool / Instalando herramienta system-setup..."
 uv tool install . --reinstall
 info "Running setup / Ejecutando configuración..."
 system-setup
+info "Tip: the desktop app (system-setupg) runs on Windows and can manage this WSL distro, including Docker."
+info "Consejo: la aplicación de escritorio (system-setupg) se ejecuta en Windows y puede administrar esta distribución WSL, incluido Docker."

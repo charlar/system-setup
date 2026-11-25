@@ -458,6 +458,11 @@ def main() -> None:
     if _check_for_updates(s):
         return
 
+    from .shortcut import ensure_shortcut
+    from .winenv import refresh_path
+    refresh_path()          # pick up anything installed since this terminal was opened
+    ensure_shortcut()       # Start menu > System Setup (Windows only, no-op if present)
+
     choco_ready = not IS_WINDOWS
     npm_needed  = False
 
@@ -504,6 +509,9 @@ def main() -> None:
 
         print(f"  {s['installing']} {name}...")
         _exec(install_cmd)
+        # Installers update PATH in the registry, not in this process — re-read it so the
+        # new tool (and e.g. npm right after Node.js) is found without a new terminal.
+        refresh_path()
 
         post_key = "win_post" if IS_WINDOWS else "wsl_post"
         if password and post_key in cfg and _check(cfg["check"]):
