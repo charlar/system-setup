@@ -84,6 +84,7 @@ MESSAGES: dict[str, dict[str, str]] = {
         "err.my_quotes": "Password can't contain both ' and \" characters",
         "err.mysql_missing": "mysql not found — install MySQL first.",
         "err.timeout": "Timed out.",
+        "err.no_such_conn": "'{name}' not found.",
 
         # app
         "err.elevation_cancelled": "Elevation was cancelled.",
@@ -165,6 +166,7 @@ MESSAGES: dict[str, dict[str, str]] = {
         "err.my_quotes": "La contraseña no puede contener comillas simples ' y dobles \" a la vez",
         "err.mysql_missing": "No se encontró mysql — instale MySQL primero.",
         "err.timeout": "Se agotó el tiempo de espera.",
+        "err.no_such_conn": "No se encontró '{name}'.",
 
         "err.elevation_cancelled": "Se canceló la solicitud de permisos de administrador.",
         "err.wait_for_job": "Espere a que termine la instalación en curso.",

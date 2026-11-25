@@ -205,6 +205,11 @@ class Api:
         return True
 
     @_api
+    def pg_change_password(self, name, password):
+        ok, out = pgconfig.change_password(name, password)
+        return {"ok": True, "success": ok, "output": out}
+
+    @_api
     def pg_test(self, name):
         ok, out = pgconfig.test_service(name)
         return {"ok": True, "success": ok, "output": out}
@@ -225,6 +230,11 @@ class Api:
     def my_delete(self, name):
         myconfig.delete_login(name)
         return True
+
+    @_api
+    def my_change_password(self, name, password):
+        ok, out = myconfig.change_password(name, password)
+        return {"ok": True, "success": ok, "output": out}
 
     @_api
     def my_test(self, name):

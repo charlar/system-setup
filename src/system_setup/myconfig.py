@@ -119,3 +119,44 @@ def test_login(name: str) -> tuple[bool, str]:
     except subprocess.TimeoutExpired:
         return False, t("err.timeout")
     return r.returncode == 0, (r.stdout + r.stderr).strip()
+
+
+# ---------------------------------------------------------------------------
+# Change a password on the server
+# ---------------------------------------------------------------------------
+
+def _sql_str(v: str) -> str:
+    return v.replace("\\", "\\\\").replace("'", "''")
+
+
+def change_password(name: str, new_password: str) -> tuple[bool, str]:
+    if not new_password:
+        raise ValueError(t("err.password_required"))
+    quoted = _quote(new_password)          # validates before touching the server
+    ini = IniFile(option_file())
+    vals = ini.get(f"client{name}")
+    if vals is None:
+        raise ValueError(t("err.no_such_conn", name=name))
+    mysql = find_mysql()
+    if not mysql:
+        return False, t("err.mysql_missing")
+    # sent on stdin, never on the command line
+    sql = f"ALTER USER CURRENT_USER() IDENTIFIED BY '{_sql_str(new_password)}';\n"
+    try:
+        r = subprocess.run(
+            [mysql, *client_args(name), "--connect-timeout=10"],
+            input=sql, capture_output=True, text=True, timeout=30, creationflags=NO_WINDOW,
+        )
+    except subprocess.TimeoutExpired:
+        return False, t("err.timeout")
+    if r.returncode != 0:
+        return False, (r.stdout + r.stderr).strip()
+    # update every saved login for the same user on the same server
+    key = ((vals.get("host") or "localhost"), vals.get("port") or "", vals.get("user"))
+    for group in ini.names():
+        if group.startswith("client"):
+            v = ini.get(group) or {}
+            if ((v.get("host") or "localhost"), v.get("port") or "", v.get("user")) == key:
+                ini.set(group, {"password": quoted})
+    ini.save(private=True)
+    return test_login(name)

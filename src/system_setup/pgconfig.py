@@ -201,3 +201,68 @@ def test_service(name: str) -> tuple[bool, str]:
         return False, t("err.timeout")
     out = (r.stdout + r.stderr).strip()
     return r.returncode == 0, out
+
+
+# ---------------------------------------------------------------------------
+# Change a password on the server
+# ---------------------------------------------------------------------------
+
+def scram_verifier(password: str, iterations: int = 4096, salt: bytes | None = None) -> str:
+    """
+    SCRAM-SHA-256 verifier, computed locally like psql's "\\password" does, so the
+    plain password is never sent to the server (or written to its logs).
+    """
+    import base64
+    import hashlib
+    import hmac
+    import unicodedata
+    salt = salt or os.urandom(16)
+    # PostgreSQL applies SASLprep; NFKC covers it for practically all passwords
+    pw = password if password.isascii() else unicodedata.normalize("NFKC", password)
+    salted = hashlib.pbkdf2_hmac("sha256", pw.encode("utf-8"), salt, iterations)
+    client_key = hmac.new(salted, b"Client Key", hashlib.sha256).digest()
+    stored_key = hashlib.sha256(client_key).digest()
+    server_key = hmac.new(salted, b"Server Key", hashlib.sha256).digest()
+    b64 = lambda b: base64.b64encode(b).decode("ascii")
+    return f"SCRAM-SHA-256${iterations}:{b64(salt)}${b64(stored_key)}:{b64(server_key)}"
+
+
+def _replace_server_password(host: str, port: str, user: str, password: str) -> bool:
+    """A role's password applies to every database: update all pgpass lines for host/port/user."""
+    out, hit = [], False
+    for line in _read_pgpass():
+        f = _split_pgpass(line)
+        if f and f[0] == host and f[1] == port and f[3] == user:
+            out.append(":".join(_esc(v) for v in (*f[:4], password)))
+            hit = True
+        else:
+            out.append(line)
+    _write_pgpass(out)
+    return hit
+
+
+def change_password(name: str, new_password: str) -> tuple[bool, str]:
+    if not new_password:
+        raise ValueError(t("err.password_required"))
+    vals = IniFile(service_file()).get(name)
+    if vals is None:
+        raise ValueError(t("err.no_such_conn", name=name))
+    psql = find_psql()
+    if not psql:
+        return False, t("err.psql_missing")
+    host, port, _db, user = _key(vals)
+    # sent on stdin, never on the command line
+    sql = f"ALTER ROLE CURRENT_USER PASSWORD '{scram_verifier(new_password)}';\n"
+    try:
+        r = subprocess.run(
+            [psql, f"service={name}", "-w", "-X", "-q", "-v", "ON_ERROR_STOP=1", "-f", "-"],
+            input=sql, capture_output=True, text=True, timeout=30,
+            env=dict(os.environ, PGCONNECT_TIMEOUT="10"), creationflags=NO_WINDOW,
+        )
+    except subprocess.TimeoutExpired:
+        return False, t("err.timeout")
+    if r.returncode != 0:
+        return False, (r.stdout + r.stderr).strip()
+    if not _replace_server_password(host, port, user, new_password):
+        _set_password(vals, new_password)
+    return test_service(name)

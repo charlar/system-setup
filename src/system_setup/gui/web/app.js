@@ -406,7 +406,7 @@ function plainButton(label, cls, onclick) {
   return b;
 }
 
-function connList({ listEl, filesEl, items, files, missingTool, describe, usage, onTest, onEdit, onDelete, emptyText }) {
+function connList({ listEl, filesEl, items, files, missingTool, describe, usage, onTest, onEdit, onDelete, onChangePw, emptyText }) {
   listEl.innerHTML = "";
   filesEl.innerHTML = files.map((f) => `<div>${tr("conn.file")} <code>${esc(f)}</code></div>`).join("") +
     (missingTool ? `<div style="color:var(--warn)">${esc(missingTool)}</div>` : "");
@@ -431,14 +431,40 @@ function connList({ listEl, filesEl, items, files, missingTool, describe, usage,
         out.textContent = (r.success ? "✓ " : "✗ ") + (r.output || (r.success ? tr("conn.connected") : tr("conn.failed")));
       } catch (e) { out.className = "test-out bad"; out.textContent = e.message; }
     });
+    const changePw = plainButton(tr("btn.change_pw"), "btn", async () => {
+      const r = await onChangePw(it);
+      if (!r) return;
+      out.className = `test-out ${r.success ? "ok" : "bad"}`;
+      out.textContent = r.success ? `✓ ${tr("pw.done")}` : `✗ ${tr("pw.failed")} ${r.output}`;
+    });
     row.querySelector(".actions").append(
       test,
+      changePw,
       plainButton(tr("btn.edit"), "btn", () => onEdit(it)),
       plainButton(tr("btn.delete"), "btn danger", () => onDelete(it)),
     );
     listEl.appendChild(row);
   }
   wireSecrets(listEl);
+}
+
+// Change the password on the server, then in the saved config. Returns the result or null if cancelled.
+async function changePassword(method, name, user, host) {
+  return openModal({
+    title: tr("pw.title", { name: name || tr("conn.default") }),
+    okText: tr("pw.ok_btn"),
+    intro: tr("pw.intro", { user: esc(user), host: esc(host) }),
+    fields: [
+      { name: "password", label: tr("pw.new"), type: "password", required: true },
+      { name: "confirm", label: tr("tools.pw_confirm"), type: "password", required: true },
+    ],
+    onSubmit: async (v) => {
+      if (v.password !== v.confirm) throw new Error(tr("tools.pw_mismatch"));
+      const r = (await call(method, name, v.password));
+      if (!r.success) throw new Error(`${tr("pw.failed")} ${r.output}`);   // keep the dialog open
+      return r;
+    },
+  });
 }
 
 function pwPlaceholder(isNew, item) {
@@ -458,6 +484,7 @@ async function loadPg() {
     describe: (s) => `${s.user || "?"} @ ${s.host || "localhost"}:${s.port || "5432"} / ${s.dbname || s.user}`,
     usage: (s) => `psql service=${s.name}`,
     onTest: (s) => call("pg_test", s.name),
+    onChangePw: (s) => changePassword("pg_change_password", s.name, s.user || "postgres", s.host || "localhost"),
     onEdit: (s) => editPg(s),
     onDelete: async (s) => {
       if (!confirm(tr("pg.delete_confirm", { name: s.name }))) return;
@@ -502,6 +529,7 @@ async function loadMy() {
     describe: (l) => `${l.user || "?"} @ ${l.host || "localhost"}${l.port ? ":" + l.port : ""}${l.database ? " / " + l.database : ""}`,
     usage: (l) => l.name ? `mysql --defaults-group-suffix=${l.name}` : tr("my.default_usage"),
     onTest: (l) => call("my_test", l.name),
+    onChangePw: (l) => changePassword("my_change_password", l.name, l.user, l.host || "localhost"),
     onEdit: (l) => editMy(l),
     onDelete: async (l) => {
       if (!confirm(tr("my.delete_confirm", { name: l.name || tr("conn.default") }))) return;
