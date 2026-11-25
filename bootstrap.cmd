@@ -60,7 +60,10 @@ if !UV_FOUND!==1 (
 :: ---------- clone / update repo ----------
 if exist "%REPO_DIR%\.git" (
     echo [setup] Repository already cloned -- pulling latest / Repositorio ya clonado -- actualizando...
-    git -C "%REPO_DIR%" pull --ff-only
+    rem fetch + forced checkout, not pull: works from a detached release tag, and a stray
+    rem file in the clone, e.g. an untracked uv.lock, can't block it
+    git -C "%REPO_DIR%" fetch origin --tags --force --quiet
+    git -C "%REPO_DIR%" checkout --quiet --force -B master origin/master
 ) else (
     echo [setup] Cloning repository / Clonando repositorio...
     git clone %REPO_URL% "%REPO_DIR%"

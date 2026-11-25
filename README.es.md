@@ -59,6 +59,26 @@ system-setup    :: línea de comandos
 
 ---
 
+## ¿Atascado en v0.1.0? ("Hay una versión más reciente disponible" cada vez)
+
+La v0.1.0 ofrece la actualización pero a menudo no logra instalarla, y no informa del error. Compruébelo con `uv tool list`: si muestra `system-setup v0.1.0`, cierre System Setup y ejecute esta corrección única. No necesita permisos de administrador. Después, las actualizaciones se instalan solas.
+
+**Windows (CMD):**
+
+```cmd
+curl -fsSL https://raw.githubusercontent.com/charlar/system-setup/master/fix-update.cmd -o fix-update.cmd && fix-update.cmd
+```
+
+**WSL:**
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/charlar/system-setup/master/fix-update.sh | bash
+```
+
+Mueve `~/system-setup` a la versión más reciente y reinstala. (La causa: un `uv.lock` sobrante en esa carpeta bloquea el `git pull` de la v0.1.0.)
+
+---
+
 ## system-setupg (aplicación de escritorio, Windows)
 
 Después de la configuración, ejecute `system-setupg` para abrir una ventana donde puede:

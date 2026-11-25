@@ -38,7 +38,10 @@ fi
 # ---------- clone / update repo ----------
 if [ -d "$REPO_DIR/.git" ]; then
     info "Repository already cloned — pulling latest / Repositorio ya clonado — actualizando..."
-    git -C "$REPO_DIR" pull --ff-only
+    # fetch + forced checkout, not pull: works from a detached release tag, and a stray
+    # file in the clone (e.g. an untracked uv.lock) can't block it
+    git -C "$REPO_DIR" fetch origin --tags --force --quiet
+    git -C "$REPO_DIR" checkout --quiet --force -B master origin/master
 else
     info "Cloning repository / Clonando repositorio..."
     git clone "$REPO_URL" "$REPO_DIR"

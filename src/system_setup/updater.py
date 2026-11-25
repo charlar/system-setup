@@ -117,12 +117,13 @@ def pull(channel: str | None = None) -> tuple[bool, str]:
     target = check(channel)
     if not target:
         return False, "No update found."
+    # The clone is ours, not a workspace: --force so a stray file (e.g. a uv.lock
+    # that uv generated before the repo tracked one) can't block the switch.
     if channel == "latest":
-        r = _git("checkout", "--quiet", BRANCH, timeout=30)      # leave a detached release tag
-        if r.returncode == 0:
-            r = _git("merge", "--ff-only", f"origin/{BRANCH}", timeout=60)
+        # check() already confirmed origin/master is a fast-forward of HEAD
+        r = _git("checkout", "--quiet", "--force", "-B", BRANCH, f"origin/{BRANCH}", timeout=60)
     else:
-        r = _git("-c", "advice.detachedHead=false", "checkout", "--quiet", "--detach", target, timeout=60)
+        r = _git("-c", "advice.detachedHead=false", "checkout", "--quiet", "--force", "--detach", target, timeout=60)
     return r.returncode == 0, "\n".join([target, r.stdout.strip(), r.stderr.strip()]).strip()
 
 

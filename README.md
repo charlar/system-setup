@@ -59,6 +59,26 @@ system-setup    :: command line
 
 ---
 
+## Stuck on v0.1.0? ("A newer version is available" every time)
+
+v0.1.0 offers the update but often fails to install it, and it doesn't report the failure. Check with `uv tool list`: if it shows `system-setup v0.1.0`, close System Setup and run this one-time fix. It needs no administrator rights. After that, updates install themselves.
+
+**Windows (CMD):**
+
+```cmd
+curl -fsSL https://raw.githubusercontent.com/charlar/system-setup/master/fix-update.cmd -o fix-update.cmd && fix-update.cmd
+```
+
+**WSL:**
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/charlar/system-setup/master/fix-update.sh | bash
+```
+
+It moves `~/system-setup` to the newest release and reinstalls. (The cause: a stray `uv.lock` in that folder blocks v0.1.0's `git pull`.)
+
+---
+
 ## system-setupg (desktop app, Windows)
 
 After setup, run `system-setupg` (Start → Run, or any terminal) for a window where you can:
